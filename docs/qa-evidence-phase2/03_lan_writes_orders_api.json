@@ -1,0 +1,280 @@
+{
+  "test_name": "Step 3 — Server --lan-writes orders API & Concurrency verification",
+  "timestamp_utc": "2026-10-25T18:13:47Z",
+  "data_dir": "C:\\Users\\Admin\\AppData\\Local\\Temp\\lalab_qa_lanwrites_orders_1792952027",
+  "http_port": 5072,
+  "health_port": 5272,
+  "cli_args": [
+    "D:\\___TOOLS\\__TINIX\\LalabReport\\src\\LalabAutoReport.Server\\bin\\Debug\\net8.0-windows\\LalabAutoReport.Server.exe",
+    "--data-dir",
+    "C:\\Users\\Admin\\AppData\\Local\\Temp\\lalab_qa_lanwrites_orders_1792952027",
+    "--port",
+    "5072",
+    "--health-port",
+    "5272",
+    "--lan-writes",
+    "orders"
+  ],
+  "results": {
+    "health_ready_orders": {
+      "status": "Ready",
+      "buildId": "2.0.0+5ec3e214724ad7eb76d13295d2683037b099bcc5+2.0.0",
+      "assemblyVersion": "2.0.0",
+      "schemaVersion": 29,
+      "startedAtUtc": "2026-10-25T18:13:48.1965540+00:00",
+      "cloud": "disabled",
+      "autoScan": "disabled",
+      "components": {
+        "mobileApi": "ready",
+        "database": "ready"
+      },
+      "capabilities": [
+        "orders.setDelivered",
+        "orders.setPrinted",
+        "orders.editNote"
+      ]
+    },
+    "admin_login": {
+      "status": 200,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:48 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"success\":true,\"token\":\"lsv2.b215131c092a4dc480eeff5aa727a0be.hEO8GdD2vyMsGu0-sHGUYsBIdlDHp_ZRn09e-nnarTo\",\"sessionId\":\"b215131c092a4dc480eeff5aa727a0be\",\"role\":\"Admin\",\"workshopName\":\"XƯỞNG IN ẢNH LALAB\",\"capabilities\":[\"orders.read\",\"orders.setDelivered\",\"orders.setPrinted\",\"orders.editNote\",\"gallery.read\",\"labels.printOrder\",\"finance.read\",\"bills.draft\",\"bills.lock\",\"bills.split\",\"bills.overrideQuantityPrice\",\"bills.reopen\",\"payments.confirm\",\"payments.revoke\",\"catalog.edit\",\"scan.request\",\"admin.maintenance\",\"admin.sessions\"],\"expiresAtUtc\":\"2026-11-24T18:13:48.9928683+00:00\"}"
+    },
+    "staff_login": {
+      "status": 200,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:48 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"success\":true,\"token\":\"lsv2.9cb6cf2f0b2342b7bd6405b1bc34190a.sJnkFEff6wqHG_0rvcnhireD0l0NF-f4Cx-q7WaRBmA\",\"sessionId\":\"9cb6cf2f0b2342b7bd6405b1bc34190a\",\"role\":\"Staff\",\"workshopName\":\"XƯỞNG IN ẢNH LALAB\",\"capabilities\":[\"orders.read\",\"orders.setDelivered\",\"orders.setPrinted\",\"orders.editNote\",\"gallery.read\",\"labels.printOrder\"],\"expiresAtUtc\":\"2026-11-24T18:13:49.1447976+00:00\"}"
+    },
+    "staff_finance_forbidden": {
+      "status": 403,
+      "headers": {
+        "Content-Length": "0",
+        "Connection": "close",
+        "Date": "Sun, 25 Oct 2026 18:13:48 GMT",
+        "Server": "Kestrel"
+      },
+      "body": ""
+    },
+    "operational_state_initial": {
+      "status": 200,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:48 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"delivered\":{\"value\":false,\"at\":null,\"by\":null,\"revision\":0},\"printed\":{\"value\":false,\"at\":null,\"revision\":0},\"note\":{\"value\":\"\",\"revision\":0}}"
+    },
+    "orders_list_revisions": {
+      "status": 200,
+      "has_revisions": true,
+      "order_sample": {
+        "id": 1,
+        "deliveredRevision": 0,
+        "printedRevision": 0,
+        "noteRevision": 0
+      }
+    },
+    "staff_set_delivered_200": {
+      "status": 200,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:49 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"orderId\":1,\"fieldGroup\":\"delivered\",\"revision\":1,\"value\":{\"delivered\":true,\"deliveredAt\":\"2026-10-25T18:13:49.2242517+00:00\",\"deliveredBy\":\"Nhân viên\"},\"changed\":true,\"operationId\":\"34dfcd8926fe44898285cb2fa4858dc4\",\"syncState\":null}"
+    },
+    "staff_deliv_replay_200": {
+      "status": 200,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:49 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"orderId\":1,\"fieldGroup\":\"delivered\",\"revision\":1,\"value\":{\"delivered\":true,\"deliveredAt\":\"2026-10-25T18:13:49.2242517+00:00\",\"deliveredBy\":\"Nhân viên\"},\"changed\":true,\"operationId\":\"34dfcd8926fe44898285cb2fa4858dc4\",\"syncState\":null}"
+    },
+    "idempotency_conflict_409": {
+      "status": 409,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:49 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"code\":\"IDEMPOTENCY_CONFLICT\",\"message\":\"Thao tác đã được thực hiện với nội dung khác.\",\"correlationId\":\"81e2746e5bef4373ab75d14f6f5e29e9\"}"
+    },
+    "stale_revision_409": {
+      "status": 409,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:49 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"code\":\"STALE_REVISION\",\"message\":\"Đơn vừa được cập nhật trên thiết bị khác.\",\"entityType\":\"order\",\"entityId\":1,\"fieldGroup\":\"delivered\",\"currentRevision\":1,\"currentValue\":{\"delivered\":true,\"deliveredAt\":\"2026-10-25T18:13:49.2242517+00:00\",\"deliveredBy\":\"Nhân viên\"},\"correlationId\":\"3aacd72d16d74b86a39f2596d8f963c3\"}"
+    },
+    "admin_set_printed_200": {
+      "status": 200,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:49 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"orderId\":1,\"fieldGroup\":\"printed\",\"revision\":1,\"value\":{\"printed\":true,\"printedAt\":\"2026-10-25T18:13:49.2550720+00:00\",\"printProgress\":1},\"changed\":true,\"operationId\":\"20f1a8f2e656414882fbbf25e7510636\",\"syncState\":null}"
+    },
+    "admin_set_note_200": {
+      "status": 200,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:49 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"orderId\":1,\"fieldGroup\":\"note\",\"revision\":1,\"value\":{\"note\":\"B3 QA Verified Note\"},\"changed\":true,\"operationId\":\"a61de8cd5f1b41beb213713421e35588\",\"syncState\":null}"
+    },
+    "lookup_committed_200": {
+      "status": 200,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:49 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"status\":\"committed\",\"capability\":\"orders.setDelivered\",\"entityType\":\"order\",\"entityId\":1,\"result\":{\"OrderId\":1,\"FieldGroup\":\"delivered\",\"Revision\":1,\"Value\":{\"delivered\":true,\"deliveredAt\":\"2026-10-25T18:13:49.2242517+00:00\",\"deliveredBy\":\"Nhân viên\"},\"Changed\":true,\"OperationId\":\"34dfcd8926fe44898285cb2fa4858dc4\",\"SyncState\":null}}"
+    },
+    "lookup_not_found_200": {
+      "status": 200,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:49 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"status\":\"not_found\"}"
+    },
+    "handshake_missing_426": {
+      "status": 426,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:49 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"code\":\"CLIENT_TOO_OLD\",\"message\":\"Yêu cầu tiêu đề X-Lalab-Client-Api: 1.x.\",\"correlationId\":null}"
+    },
+    "handshake_future_426": {
+      "status": 426,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:49 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"code\":\"SERVER_TOO_OLD\",\"message\":\"Máy chủ chưa hỗ trợ phiên bản API này.\",\"correlationId\":null}"
+    },
+    "legacy_token_v1_401": {
+      "status": 401,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:49 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"code\":\"UNAUTHORIZED\",\"message\":\"Yêu cầu phiên đăng nhập hợp lệ.\",\"correlationId\":null}"
+    },
+    "legacy_toggle_delivered_200": {
+      "status": 200,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:49 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"id\":1,\"syncState\":\"pending\",\"isDelivered\":false,\"deliveredAt\":null,\"deliveredBy\":null}"
+    },
+    "legacy_note_200": {
+      "status": 200,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:49 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"id\":1,\"note\":\"Note via Legacy Adapter\",\"syncState\":\"pending\"}"
+    },
+    "legacy_concurrent_notes_count": 12,
+    "legacy_concurrent_stale_count": 3,
+    "legacy_stale_sample": {
+      "success": false,
+      "code": "STALE_REVISION",
+      "message": "Đơn vừa được cập nhật trên thiết bị khác. Vui lòng tải lại."
+    },
+    "bills_payment_503": {
+      "status": 503,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:49 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"code\":\"WRITES_DISABLED_UNTIL_PHASE2\",\"message\":\"Máy chủ đang chạy ở chế độ chỉ đọc LAN Phase 1. Các thao tác ghi bị tạm khóa cho đến Phase 2.\"}"
+    },
+    "bills_print_503": {
+      "status": 503,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:49 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"code\":\"WRITES_DISABLED_UNTIL_PHASE2\",\"message\":\"Máy chủ đang chạy ở chế độ chỉ đọc LAN Phase 1. Các thao tác ghi bị tạm khóa cho đến Phase 2.\"}"
+    },
+    "maintenance_503": {
+      "status": 503,
+      "headers": {
+        "Connection": "close",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 25 Oct 2026 18:13:49 GMT",
+        "Server": "Kestrel",
+        "Transfer-Encoding": "chunked"
+      },
+      "body": "{\"code\":\"WRITES_DISABLED_UNTIL_PHASE2\",\"message\":\"Máy chủ đang chạy ở chế độ chỉ đọc LAN Phase 1. Các thao tác ghi bị tạm khóa cho đến Phase 2.\"}"
+    },
+    "database_persistence": {
+      "command_receipts": 14,
+      "audit_log": 16,
+      "change_journal": 14
+    }
+  },
+  "status": "PASS"
+}

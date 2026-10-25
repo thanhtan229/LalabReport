@@ -965,3 +965,14 @@ Owners: **02** backend, **03** frontend (WPF/PWA), **04** tests. Within a batch,
 3. A lock is now **rejected** when the same included order is already in another Locked/Exported bill. Before, it silently succeeded, which is a double-bill fix.
 4. Scan no longer re-marks an order as printed from an old folder marker after someone explicitly un-printed it.
 5. Order notes are limited to 4000 characters.
+
+
+---
+
+## 9. Phase 2 B3 gate result (25/10/2026)
+
+- B1 commit `0f2a7b9`, B2 `5ec3e21`, B3 + gate `209914c` on `master` (not pushed/deployed).
+- Validation: build 0 warnings/0 errors; **810 tests passed**; QA PASS (evidence `docs/qa-evidence-phase2/`); Code Reviewer LGTM after gate/PWA fixes.
+- Default flipped: `LalabAutoReport.Server --lan-writes` now defaults to `orders`; `--lan-writes none` is the instant rollback. Payment, print and maintenance remain `503 WRITES_DISABLED_UNTIL_PHASE2`.
+- Verified at gate: v1 note/delivered/printed 200 with revisions/idempotency/stale 409; legacy adapters; revoke-all 200 Admin / 403 Staff; inventory unchanged by migration; PWA conflict preserves note draft.
+- Not verified: Session 0 Windows Service execution/rendering; 10-client load (B4); desktop client mode (Phase 3).

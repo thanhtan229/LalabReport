@@ -1,0 +1,164 @@
+{
+  "test_name": "Step 5 — Fixture Inventory Upgrade Invariance & Hygiene Audit",
+  "timestamp_utc": "2026-10-25T18:26:43Z",
+  "results": {
+    "inventory_before_upgrade": {
+      "orders": 20,
+      "order_items": 1243,
+      "bills": 12,
+      "locked_bills": 21,
+      "locked_bills_count": 21,
+      "locked_bills_total_amount_vnd": 9705000,
+      "locked_bills_snapshot_sha256": "9b31fcd4f8d52d1b42664eeb4052b22027f02afb9252a49c43e681d22406a429",
+      "locked_bills_sha256": "9b31fcd4f8d52d1b42664eeb4052b22027f02afb9252a49c43e681d22406a429",
+      "outstanding_debt_vnd": 8335000,
+      "customer_bills": 36,
+      "customers": 6,
+      "print_specifications": 7,
+      "product_families": 3,
+      "product_variants": 7,
+      "customer_aliases": 10,
+      "aliases": 66,
+      "cloud_endpoint": "https://lalab.tinix.io.vn",
+      "cloud_stream_id": "35b6779a89585e0a896c5c9db7b70e38",
+      "cloud_last_cursor": 43,
+      "cloud_requires_reconciliation": false,
+      "cloud_sync_queue_pending": 0,
+      "cloud_operational_outbox_pending": 0,
+      "cloud_print_command_ledger_unacked": 0,
+      "root_folders": 2,
+      "schema_migrations_max_version": 24
+    },
+    "health_ready_post_migration": {
+      "status": "Ready",
+      "buildId": "2.0.0+5ec3e214724ad7eb76d13295d2683037b099bcc5+2.0.0",
+      "assemblyVersion": "2.0.0",
+      "schemaVersion": 29,
+      "startedAtUtc": "2026-10-25T18:26:44.0586292+00:00",
+      "cloud": "disabled",
+      "autoScan": "disabled",
+      "components": {
+        "mobileApi": "ready",
+        "database": "ready"
+      },
+      "capabilities": [
+        "orders.setDelivered",
+        "orders.setPrinted",
+        "orders.editNote"
+      ]
+    },
+    "health_live": {
+      "status": "Live",
+      "buildId": "2.0.0+5ec3e214724ad7eb76d13295d2683037b099bcc5+2.0.0",
+      "assemblyVersion": "2.0.0",
+      "schemaVersion": 29,
+      "startedAtUtc": "2026-10-25T18:26:44.0586292+00:00",
+      "cloud": "disabled",
+      "autoScan": "disabled"
+    },
+    "inventory_after_upgrade": {
+      "orders": 20,
+      "order_items": 1243,
+      "bills": 12,
+      "locked_bills": 21,
+      "locked_bills_count": 21,
+      "locked_bills_total_amount_vnd": 9705000,
+      "locked_bills_snapshot_sha256": "9b31fcd4f8d52d1b42664eeb4052b22027f02afb9252a49c43e681d22406a429",
+      "locked_bills_sha256": "9b31fcd4f8d52d1b42664eeb4052b22027f02afb9252a49c43e681d22406a429",
+      "outstanding_debt_vnd": 8335000,
+      "customer_bills": 36,
+      "customers": 6,
+      "print_specifications": 7,
+      "product_families": 3,
+      "product_variants": 7,
+      "customer_aliases": 10,
+      "aliases": 66,
+      "cloud_endpoint": "https://lalab.tinix.io.vn",
+      "cloud_stream_id": "35b6779a89585e0a896c5c9db7b70e38",
+      "cloud_last_cursor": 43,
+      "cloud_requires_reconciliation": false,
+      "cloud_sync_queue_pending": 0,
+      "cloud_operational_outbox_pending": 0,
+      "cloud_print_command_ledger_unacked": 0,
+      "root_folders": 2,
+      "schema_migrations_max_version": 29
+    },
+    "upgrade_comparison": {
+      "schema_version": {
+        "before": 24,
+        "after": 29,
+        "match": true
+      },
+      "orders": {
+        "before": 20,
+        "after": 20,
+        "match": true
+      },
+      "order_items": {
+        "before": 1243,
+        "after": 1243,
+        "match": true
+      },
+      "bills": {
+        "before": 12,
+        "after": 12,
+        "match": true
+      },
+      "locked_bills": {
+        "before": 21,
+        "after": 21,
+        "match": true
+      },
+      "locked_bills_count": {
+        "before": 21,
+        "after": 21,
+        "match": true
+      },
+      "locked_bills_total_amount_vnd": {
+        "before": 9705000,
+        "after": 9705000,
+        "match": true
+      },
+      "locked_bills_snapshot_sha256": {
+        "before": "9b31fcd4f8d52d1b42664eeb4052b22027f02afb9252a49c43e681d22406a429",
+        "after": "9b31fcd4f8d52d1b42664eeb4052b22027f02afb9252a49c43e681d22406a429",
+        "match": true
+      },
+      "outstanding_debt_vnd": {
+        "before": 8335000,
+        "after": 8335000,
+        "match": true
+      },
+      "customer_bills": {
+        "before": 36,
+        "after": 36,
+        "match": true
+      },
+      "customers": {
+        "before": 6,
+        "after": 6,
+        "match": true
+      },
+      "root_folders": {
+        "before": 2,
+        "after": 2,
+        "match": true
+      }
+    },
+    "hygiene_audit": {
+      "log_files_scanned": 1,
+      "total_lines_scanned": 28,
+      "secrets_checked": [
+        "123456",
+        "000000",
+        "password",
+        "secret",
+        "private_key"
+      ],
+      "leaks_found": 0,
+      "leaks_details": []
+    },
+    "lingering_server_processes": false
+  },
+  "status": "PASS"
+}

@@ -1,0 +1,109 @@
+{
+  "test_name": "Step 4 — PWA Real Browser Verification (Chrome Headless, 390x844)",
+  "timestamp_utc": "2026-10-25T18:25:57Z",
+  "browser": "Google Chrome Headless",
+  "viewport": {
+    "width": 390,
+    "height": 844,
+    "deviceScaleFactor": 3,
+    "mobile": true
+  },
+  "http_port": 5078,
+  "health_port": 5278,
+  "cdp_port": 9226,
+  "results": {
+    "server_ready": {
+      "status": "Ready",
+      "buildId": "2.0.0+5ec3e214724ad7eb76d13295d2683037b099bcc5+2.0.0",
+      "assemblyVersion": "2.0.0",
+      "schemaVersion": 29,
+      "startedAtUtc": "2026-10-25T18:25:58.3900730+00:00",
+      "cloud": "disabled",
+      "autoScan": "disabled",
+      "components": {
+        "mobileApi": "ready",
+        "database": "ready"
+      },
+      "capabilities": [
+        "orders.setDelivered",
+        "orders.setPrinted",
+        "orders.editNote"
+      ]
+    },
+    "driver_execution": {
+      "steps": {
+        "screenshot_login": "D:\\___TOOLS\\__TINIX\\LalabReport\\docs\\qa-evidence-phase2\\04a_pwa_login_390x844.png",
+        "pin_modal_visible": true,
+        "token_prefix": "lsv2.ea486...",
+        "orders_count": 17,
+        "screenshot_orders": "D:\\___TOOLS\\__TINIX\\LalabReport\\docs\\qa-evidence-phase2\\04b_pwa_orders_loaded_390x844.png",
+        "order_id": 21,
+        "order_after_toggles": {
+          "isDelivered": true,
+          "deliveredRev": 1,
+          "isPrinted": true,
+          "printedRev": 1
+        },
+        "screenshot_toggles": "D:\\___TOOLS\\__TINIX\\LalabReport\\docs\\qa-evidence-phase2\\04c_pwa_delivered_and_printed_set.png",
+        "order_after_note": {
+          "note": "Tab 1 Baseline Note",
+          "noteRev": 1
+        },
+        "concurrent_tab2_data": {
+          "orderId": 21,
+          "fieldGroup": "note",
+          "revision": 2,
+          "value": {
+            "note": "Server Note from Concurrent Tab 2"
+          },
+          "changed": true,
+          "operationId": "8d446051d3e3405c83fd1ec70c84f003",
+          "syncState": null
+        },
+        "conflict_result": {
+          "modalHidden": false,
+          "noticeHidden": false,
+          "serverText": "Server Note from Concurrent Tab 2",
+          "draftText": "Unsaved draft text in Tab 1 that must not be lost"
+        },
+        "screenshot_conflict": "D:\\___TOOLS\\__TINIX\\LalabReport\\docs\\qa-evidence-phase2\\04d_pwa_note_conflict_preserved_draft.png",
+        "lookup_test": {
+          "commandSuccess": true,
+          "opIdCaptured": "5ea8cde40d2e4733bd7d1beae0858cbf",
+          "lookupData": {
+            "status": "committed",
+            "capability": "orders.setDelivered",
+            "entityType": "order",
+            "entityId": 21,
+            "result": {
+              "OrderId": 21,
+              "FieldGroup": "delivered",
+              "Revision": 2,
+              "Value": {
+                "delivered": false,
+                "deliveredAt": null,
+                "deliveredBy": null
+              },
+              "Changed": true,
+              "OperationId": "5ea8cde40d2e4733bd7d1beae0858cbf",
+              "SyncState": null
+            }
+          }
+        },
+        "revoke_status": 200,
+        "logout_result": {
+          "storedToken": null,
+          "modalVisible": true,
+          "pinError": "MÃ£ PIN khÃ´ng Ä‘Ãºng"
+        },
+        "screenshot_logout": "D:\\___TOOLS\\__TINIX\\LalabReport\\docs\\qa-evidence-phase2\\04e_pwa_pin_changed_logged_out.png",
+        "gallery_result": {
+          "status": 200,
+          "itemsCount": 5
+        }
+      },
+      "success": true
+    }
+  },
+  "status": "PASS"
+}

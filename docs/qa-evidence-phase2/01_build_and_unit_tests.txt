@@ -1,0 +1,28 @@
+﻿=== LALAB AUTO REPORT - PHASE 2 B3 BUILD & TEST SUITE EVIDENCE ===
+Date: 2026-10-26
+Tester: 05 â€” QA & Integration
+Repository: D:\___TOOLS\__TINIX\LalabReport
+
+=== DOTNET BUILD OUTPUT ===
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  LalabAutoReport.Contracts -> D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Contracts\bin\Debug\net8.0\LalabAutoReport.Contracts.dll
+  LalabAutoReport.Core -> D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Core\bin\Debug\net8.0\LalabAutoReport.Core.dll
+  LalabAutoReport.Application -> D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Application\bin\Debug\net8.0\LalabAutoReport.Application.dll
+  LalabAutoReport.Infrastructure -> D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\bin\Debug\net8.0-windows\LalabAutoReport.Infrastructure.dll
+  LalabAutoReport.UI -> D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.UI\bin\Debug\net8.0-windows\LalabAutoReport.UI.dll
+  LalabAutoReport.CrashHarness -> D:\___TOOLS\__TINIX\LalabReport\tests\LalabAutoReport.CrashHarness\bin\Debug\net8.0-windows\LalabAutoReport.CrashHarness.dll
+  LalabAutoReport.Server -> D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Server\bin\Debug\net8.0-windows\LalabAutoReport.Server.dll
+  LalabAutoReport.Tests -> D:\___TOOLS\__TINIX\LalabReport\tests\LalabAutoReport.Tests\bin\Debug\net8.0-windows\LalabAutoReport.Tests.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:01.92
+
+=== DOTNET TEST OUTPUT ===
+Test run for D:\___TOOLS\__TINIX\LalabReport\tests\LalabAutoReport.Tests\bin\Debug\net8.0-windows\LalabAutoReport.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:   799, Skipped:     0, Total:   799, Duration: 2 m 41 s - LalabAutoReport.Tests.dll (net8.0)

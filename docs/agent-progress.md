@@ -71,8 +71,17 @@ Cập nhật: 25/10/2026. Bản ghi bàn giao ngắn; Git + test evidence là ng
   - Settings PIN write-only + explicit clear; server business writes still 503.
   - Validation: build 0 warnings; 735 tests pass; runtime smoke (lsv2 login, pre/post-cutoff legacy, standalone v2 write 200 vs server 503, plaintext cleared, audit no PIN).
   - Behavior changes to release-note: PIN not viewable (empty = unchanged, explicit clear); PWA re-login once; (double-bill/marker/note-limit changes land in B2/B3).
-- **B2 (revisions, receipts, command pipeline, DB guards): NOT STARTED.**
-- **B3 (v1 HTTP commands, legacy adapters, PWA, enable note/delivered/printed): NOT STARTED.**
+- **B2 — Revisions/receipts/command pipeline: DONE** (commit `5ec3e21`, review LGTM).
+  - V27 aggregate revisions, V28 command_receipts/audit, V29 change_journal + revision triggers; `LatestVersion=29`.
+  - Idempotent desired-state command handler with receipt-before-revision, stale 409 + current value, crash harness, lock claim guards, marker non-resurrection, outbox operation id; no HTTP surface yet.
+  - Validation: 781 tests; inventory on V24 copy identical before/after V29 migration (hash/counts same).
+- **B3 — HTTP v1 commands + legacy adapters + PWA + order writes: DONE** (commit `209914c`, QA PASS, reviewer LGTM after fixes).
+  - `/api/v1` delivered/printed/note, operational-state, operation lookup, handshake; legacy toggle/note adapters.
+  - LanWriteGate exact allowlist; default `--lan-writes orders` (payment/print/maintenance still 503; rollback `--lan-writes none`).
+  - PWA set-state + revisions/operationId/409 draft preservation/lookup retry; UUID via `crypto.getRandomValues` (LAN-safe).
+  - Validation: 810 tests; runtime default note 200, payment 503, revoke-all 200; QA PASS; re-review LGTM.
 - **B4 (hardening/load/docs/final review): NOT STARTED.**
 
-Next: implement B2 exactly per `docs/PLAN_LAN_PHASE2.md` §1.4–1.6, §3, §6 B2; do not enable writes.
+Phase 2 release-note behavior changes (acknowledged): PIN no longer viewable (empty = unchanged, explicit clear); PWA re-login once after upgrade; lock rejected if an included order is already in another locked/exported bill (double-bill fix); scan no longer resurrects an old printed marker after explicit un-print; notes limited to 4000 characters.
+
+Remaining known gaps: Session 0 Windows Service install/rendering NOT VERIFIED; desktop standalone still writes its own LocalAppData DB (Phase 3 client); desktop startup credential scrubber (B1-NB3) optional; legacy toggle adapters are intentionally not retry-safe; B4 load/10-client testing pending.
