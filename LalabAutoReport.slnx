@@ -1,5 +1,7 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/LalabAutoReport.Contracts/LalabAutoReport.Contracts.csproj" />
+    <Project Path="src/LalabAutoReport.Application/LalabAutoReport.Application.csproj" />
     <Project Path="src/LalabAutoReport.Core/LalabAutoReport.Core.csproj" />
     <Project Path="src/LalabAutoReport.Infrastructure/LalabAutoReport.Infrastructure.csproj" />
     <Project Path="src/LalabAutoReport.Server/LalabAutoReport.Server.csproj" />

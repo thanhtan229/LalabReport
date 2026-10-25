@@ -57,9 +57,12 @@ public class MobileAuthService : IMobileAuthService
         _hmacKey = hmacKey ?? throw new ArgumentNullException(nameof(hmacKey));
     }
 
-    public string GenerateToken(MobileUserRole role)
+    public string GenerateToken(MobileUserRole role) =>
+        GenerateToken(role, DateTimeOffset.UtcNow);
+
+    public string GenerateToken(MobileUserRole role, DateTimeOffset issuedAt)
     {
-        long issuedAtUtcTicks = DateTime.UtcNow.Ticks;
+        long issuedAtUtcTicks = issuedAt.UtcTicks;
         string salt = Guid.NewGuid().ToString("N")[..8];
         string payload = $"{(int)role}:{issuedAtUtcTicks}:{salt}";
 
@@ -71,9 +74,13 @@ public class MobileAuthService : IMobileAuthService
         return $"{payloadBase64}.{signature}";
     }
 
-    public bool TryValidateToken(string token, out MobileUserRole role)
+    public bool TryValidateToken(string token, out MobileUserRole role) =>
+        TryValidateToken(token, out role, out _);
+
+    public bool TryValidateToken(string token, out MobileUserRole role, out DateTimeOffset issuedAt)
     {
         role = MobileUserRole.Staff;
+        issuedAt = DateTimeOffset.MinValue;
         if (string.IsNullOrWhiteSpace(token))
         {
             return false;
@@ -117,8 +124,9 @@ public class MobileAuthService : IMobileAuthService
                 return false;
             }
 
-            var issuedAt = new DateTime(issuedAtTicks, DateTimeKind.Utc);
-            if (DateTime.UtcNow - issuedAt > TimeSpan.FromDays(TokenValidityDays))
+            var issuedAtUtc = new DateTime(issuedAtTicks, DateTimeKind.Utc);
+            issuedAt = new DateTimeOffset(issuedAtUtc);
+            if (DateTime.UtcNow - issuedAtUtc > TimeSpan.FromDays(TokenValidityDays))
             {
                 return false; // Expired
             }
@@ -142,6 +150,7 @@ public class MobileAuthService : IMobileAuthService
         }
     }
 
+    [Obsolete("Use IRoleCredentialStore.VerifyAsync instead")]
     public MobileUserRole? AuthenticateWithPin(string pin, AppSettings settings)
     {
         if (string.IsNullOrWhiteSpace(pin) || settings == null)

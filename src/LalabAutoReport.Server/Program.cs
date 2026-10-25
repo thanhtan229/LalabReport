@@ -12,6 +12,7 @@ using Dapper;
 using LalabAutoReport.Core.Interfaces;
 using LalabAutoReport.Infrastructure.Composition;
 using LalabAutoReport.Infrastructure.Data;
+using LalabAutoReport.ApplicationCore.Auth;
 using LalabAutoReport.Infrastructure.Logging;
 using LalabAutoReport.Server.Health;
 using LalabAutoReport.Server.Hosting;
@@ -106,6 +107,20 @@ public class Program
             {
                 Log.Error("Fail-Closed: Khởi tạo database thất bại. Dừng server.");
                 return 4;
+            }
+
+            // Run plaintext PIN scrubber and purge expired/revoked sessions (>90 days)
+            try
+            {
+                var scrubber = serviceProvider.GetRequiredService<CredentialPlaintextScrubber>();
+                await scrubber.ScrubAsync();
+
+                var sessionStore = serviceProvider.GetRequiredService<ISessionStore>();
+                await sessionStore.PurgeExpiredAndRevokedSessionsAsync(TimeSpan.FromDays(90));
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Lỗi khi chạy Credential scrubber hoặc session purge lúc khởi động: {Message}", ex.Message);
             }
 
             // One-time startup database integrity check (logged once, not run per-request)
@@ -278,7 +293,7 @@ public class Program
                     var versionScalar = await cmd.ExecuteScalarAsync();
                     schemaVersion = Convert.ToInt32(versionScalar);
 
-                    if (schemaVersion < 24)
+                    if (schemaVersion < DatabaseMigrator.LatestVersion)
                     {
                         components["database"] = "unavailable:schema_outdated";
                         return new ServerReadinessResult(false, schemaVersion, components);
@@ -305,7 +320,7 @@ public class Program
 
             var healthProvider = new ServerHealthInfoProvider(
                 startedAtUtc: DateTimeOffset.UtcNow,
-                schemaVersionProvider: () => 24,
+                schemaVersionProvider: () => DatabaseMigrator.LatestVersion,
                 isReadyProvider: () => guard.IsAcquired && mobileServer.IsRunning,
                 componentsProvider: () => new Dictionary<string, string>
                 {

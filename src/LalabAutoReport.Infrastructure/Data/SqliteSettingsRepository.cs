@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Dapper;
 using LalabAutoReport.Core.Domain;
 using LalabAutoReport.Core.Interfaces;
+using LalabAutoReport.ApplicationCore.Auth;
 
 namespace LalabAutoReport.Infrastructure.Data;
 
@@ -15,9 +16,21 @@ public class SqliteSettingsRepository : ISettingsRepository
     private readonly ISqliteConnectionFactory _connectionFactory;
     internal ISqliteConnectionFactory ConnectionFactory => _connectionFactory;
 
-    public SqliteSettingsRepository(ISqliteConnectionFactory connectionFactory)
+    private readonly IRoleCredentialStore? _credentialStore;
+
+    public SqliteSettingsRepository(
+        ISqliteConnectionFactory connectionFactory,
+        IRoleCredentialStore? credentialStore = null)
     {
+
         _connectionFactory = connectionFactory;
+        _credentialStore = credentialStore;
+    }
+
+    public SqliteSettingsRepository(ISqliteConnectionFactory connectionFactory)
+        : this(connectionFactory, null)
+    {
+
     }
 
     public async Task<AppSettings> GetSettingsAsync(CancellationToken cancellationToken = default)
@@ -183,14 +196,32 @@ public class SqliteSettingsRepository : ISettingsRepository
             settings.MobileServerPort = parsedPort;
         }
 
+        settings.AdminPin = string.Empty;
+        settings.StaffPin = string.Empty;
+
+        int credTableExists = await connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='auth_credentials';");
+        if (credTableExists > 0)
+        {
+            var creds = (await connection.QueryAsync<(string role, byte[]? hash)>(
+                "SELECT role, hash FROM auth_credentials;")).ToDictionary(c => c.role, c => c.hash != null && c.hash.Length > 0, StringComparer.OrdinalIgnoreCase);
+            settings.AdminPinConfigured = creds.TryGetValue("Admin", out var a) && a;
+            settings.StaffPinConfigured = creds.TryGetValue("Staff", out var s) && s;
+        }
+        else
+        {
+            settings.AdminPinConfigured = dict.TryGetValue("AdminPin", out var ap) && !string.IsNullOrWhiteSpace(ap);
+            settings.StaffPinConfigured = dict.TryGetValue("StaffPin", out var sp) && !string.IsNullOrWhiteSpace(sp);
+        }
+
         if (dict.TryGetValue("AdminPin", out var adminPin))
         {
-            settings.AdminPin = adminPin?.Trim() ?? string.Empty;
+            // AdminPin is write-only; GetSettings returns empty
         }
 
         if (dict.TryGetValue("StaffPin", out var staffPin))
         {
-            settings.StaffPin = staffPin?.Trim() ?? string.Empty;
+            // StaffPin is write-only; GetSettings returns empty
         }
 
         if (dict.TryGetValue("MobileAuthSecret", out var authSecret) && !string.IsNullOrWhiteSpace(authSecret))
@@ -277,6 +308,26 @@ public class SqliteSettingsRepository : ISettingsRepository
 
     public async Task SaveSettingsAsync(AppSettings settings, CancellationToken cancellationToken = default)
     {
+        string adminPin = settings.AdminPin?.Trim() ?? string.Empty;
+        string staffPin = settings.StaffPin?.Trim() ?? string.Empty;
+
+        if (!string.IsNullOrEmpty(adminPin) && !string.IsNullOrEmpty(staffPin) &&
+            string.Equals(adminPin, staffPin, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Mã PIN Admin và Nhân viên không được trùng nhau.");
+        }
+
+        var credStore = _credentialStore ?? new SqliteRoleCredentialStore(_connectionFactory);
+
+        if (!string.IsNullOrEmpty(adminPin))
+        {
+            await credStore.SetPinAsync("Admin", adminPin, null, cancellationToken);
+        }
+
+        if (!string.IsNullOrEmpty(staffPin))
+        {
+            await credStore.SetPinAsync("Staff", staffPin, null, cancellationToken);
+        }
         using var connection = _connectionFactory.CreateConnection();
         using var transaction = connection.BeginTransaction();
 
@@ -436,8 +487,8 @@ public class SqliteSettingsRepository : ISettingsRepository
             CustomQrImagePath = settings.CustomQrImagePath ?? string.Empty,
             EnableMobileServer = settings.EnableMobileServer.ToString(),
             MobileServerPort = settings.MobileServerPort.ToString(),
-            AdminPin = settings.AdminPin,
-            StaffPin = settings.StaffPin,
+            AdminPin = string.Empty,
+            StaffPin = string.Empty,
             MobileAuthSecret = settings.MobileAuthSecret ?? string.Empty,
             ShowOrderThumbnails = settings.ShowOrderThumbnails.ToString(),
             ThermalPrinterName = settings.ThermalPrinterName ?? string.Empty,

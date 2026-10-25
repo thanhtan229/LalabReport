@@ -1,3 +1,6 @@
+using LalabAutoReport.ApplicationCore.Auth;
+using LalabAutoReport.Infrastructure.Data;
+using Microsoft.Data.Sqlite;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -27,7 +30,24 @@ public class MobileWebServerTests : IDisposable
     private readonly MockOrderRepository _orderRepo = new();
     private readonly MockCustomerBillRepository _billRepo = new();
     private readonly MockShippingLabelExporter _labelExporter = new();
-    private readonly int _testPort = 5088;
+    private readonly int _testPort = GetAvailablePort();
+
+    private static int GetAvailablePort()
+    {
+        using var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
+    }
+    private readonly string _tempDb;
+    private readonly ISessionService _sessionService;
+
+    private string GetToken(MobileUserRole role)
+    {
+        var result = _sessionService.LoginAsync(role == MobileUserRole.Admin ? "888888" : "111111", clientKind: "pwa", ip: "127.0.0.1").GetAwaiter().GetResult();
+        return result.Token!;
+    }
 
     public MobileWebServerTests()
     {
@@ -46,6 +66,27 @@ public class MobileWebServerTests : IDisposable
         var settingsRepo = new InMemorySettingsRepository(_settings);
         services.AddSingleton<ISettingsRepository>(settingsRepo);
 
+        string tempDb = Path.Combine(Path.GetTempPath(), "lalab_mws_" + Guid.NewGuid().ToString("N") + ".db");
+        _tempDb = tempDb;
+        var connFactory = new SqliteConnectionFactory(tempDb);
+        var migrator = new DatabaseMigrator(connFactory);
+        migrator.MigrateAsync().GetAwaiter().GetResult();
+
+        var credStore = new SqliteRoleCredentialStore(connFactory);
+        credStore.SetPinAsync("Admin", "888888").GetAwaiter().GetResult();
+        credStore.SetPinAsync("Staff", "111111").GetAwaiter().GetResult();
+
+        var sessionStore = new SqliteSessionStore(connFactory);
+        var rateLimiter = new LoginRateLimiter(TimeProvider.System);
+        var auditLogger = new SqliteAuditLogger(connFactory);
+        _sessionService = new SessionService(credStore, sessionStore, rateLimiter, auditLogger);
+
+        services.AddSingleton<ISqliteConnectionFactory>(connFactory);
+        services.AddSingleton<IRoleCredentialStore>(credStore);
+        services.AddSingleton<ISessionStore>(sessionStore);
+        services.AddSingleton<LoginRateLimiter>(rateLimiter);
+        services.AddSingleton<IAuditLogger>(auditLogger);
+        services.AddSingleton<ISessionService>(_sessionService);
         var authService = new MobileAuthService();
         services.AddSingleton<IMobileAuthService>(authService);
 
@@ -84,7 +125,7 @@ public class MobileWebServerTests : IDisposable
         await _webServer.StartAsync();
         try
         {
-            var token = _serviceProvider.GetRequiredService<IMobileAuthService>().GenerateToken(MobileUserRole.Staff);
+            var token = GetToken(MobileUserRole.Staff);
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
             var response = post ? await _httpClient.PostAsync($"/api/bills/1/{endpoint}", null)
                 : await _httpClient.GetAsync($"/api/bills/1/{endpoint}");
@@ -105,7 +146,7 @@ public class MobileWebServerTests : IDisposable
         try
         {
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",
-                _serviceProvider.GetRequiredService<IMobileAuthService>().GenerateToken(role));
+                GetToken(role));
             var response = await _httpClient.GetAsync("/api/bills/1");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -159,7 +200,7 @@ public class MobileWebServerTests : IDisposable
         await _webServer.StartAsync();
         try
         {
-            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _serviceProvider.GetRequiredService<IMobileAuthService>().GenerateToken(role));
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", GetToken(role));
             (await _httpClient.GetAsync("/api/orders/1/label")).StatusCode.Should().Be(HttpStatusCode.OK);
             (await _httpClient.PostAsync("/api/orders/1/print-label", null)).StatusCode.Should().Be(HttpStatusCode.OK);
             bool financial = attached && role == MobileUserRole.Admin;
@@ -182,7 +223,7 @@ public class MobileWebServerTests : IDisposable
         await _webServer.StartAsync();
         try
         {
-            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _serviceProvider.GetRequiredService<IMobileAuthService>().GenerateToken(role));
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", GetToken(role));
             using var json = JsonDocument.Parse(await _httpClient.GetStringAsync("/api/bills/1"));
             var body = json.RootElement;
             body.GetProperty("lines").GetArrayLength().Should().Be(1);
@@ -361,8 +402,8 @@ public class MobileWebServerTests : IDisposable
         try
         {
             var authService = _serviceProvider.GetRequiredService<IMobileAuthService>();
-            string staffToken = authService.GenerateToken(MobileUserRole.Staff);
-            string adminToken = authService.GenerateToken(MobileUserRole.Admin);
+            string staffToken = GetToken(MobileUserRole.Staff);
+            string adminToken = GetToken(MobileUserRole.Admin);
 
             // 1. Staff access daily report -> 403 Forbidden
             var staffReq = new HttpRequestMessage(HttpMethod.Get, "/api/reports/daily?date=2026-10-01");
@@ -719,7 +760,7 @@ public class MobileWebServerTests : IDisposable
         try
         {
             var authService = _serviceProvider.GetRequiredService<IMobileAuthService>();
-            string staffToken = authService.GenerateToken(MobileUserRole.Staff);
+            string staffToken = GetToken(MobileUserRole.Staff);
 
             var req = new HttpRequestMessage(HttpMethod.Get, "/api/orders/99/thumbnail");
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", staffToken);
@@ -770,7 +811,7 @@ public class MobileWebServerTests : IDisposable
         try
         {
             var authService = _serviceProvider.GetRequiredService<IMobileAuthService>();
-            string staffToken = authService.GenerateToken(MobileUserRole.Staff);
+            string staffToken = GetToken(MobileUserRole.Staff);
 
             var response = await _httpClient.GetAsync($"/api/orders/100/thumbnail?token={staffToken}");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -800,7 +841,7 @@ public class MobileWebServerTests : IDisposable
         try
         {
             var authService = _serviceProvider.GetRequiredService<IMobileAuthService>();
-            string staffToken = authService.GenerateToken(MobileUserRole.Staff);
+            string staffToken = GetToken(MobileUserRole.Staff);
 
             var req = new HttpRequestMessage(HttpMethod.Post, "/api/orders/201/toggle-delivered");
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", staffToken);
@@ -841,7 +882,7 @@ public class MobileWebServerTests : IDisposable
         try
         {
             var authService = _serviceProvider.GetRequiredService<IMobileAuthService>();
-            string adminToken = authService.GenerateToken(MobileUserRole.Admin);
+            string adminToken = GetToken(MobileUserRole.Admin);
 
             var req = new HttpRequestMessage(HttpMethod.Post, "/api/orders/202/toggle-delivered");
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
@@ -893,7 +934,7 @@ public class MobileWebServerTests : IDisposable
         try
         {
             var authService = _serviceProvider.GetRequiredService<IMobileAuthService>();
-            string staffToken = authService.GenerateToken(MobileUserRole.Staff);
+            string staffToken = GetToken(MobileUserRole.Staff);
 
             // 1. Add note
             var content = new StringContent(
@@ -953,7 +994,7 @@ public class MobileWebServerTests : IDisposable
         try
         {
             var authService = _serviceProvider.GetRequiredService<IMobileAuthService>();
-            string staffToken = authService.GenerateToken(MobileUserRole.Staff);
+            string staffToken = GetToken(MobileUserRole.Staff);
 
             var req = new HttpRequestMessage(HttpMethod.Post, "/api/orders/301/print-label");
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", staffToken);
@@ -1019,7 +1060,7 @@ public class MobileWebServerTests : IDisposable
         try
         {
             var authService = _serviceProvider.GetRequiredService<IMobileAuthService>();
-            string adminToken = authService.GenerateToken(MobileUserRole.Admin);
+            string adminToken = GetToken(MobileUserRole.Admin);
 
             var req = new HttpRequestMessage(HttpMethod.Post, "/api/orders/302/print-label");
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
@@ -1075,7 +1116,7 @@ public class MobileWebServerTests : IDisposable
         try
         {
             var authService = _serviceProvider.GetRequiredService<IMobileAuthService>();
-            string staffToken = authService.GenerateToken(MobileUserRole.Admin);
+            string staffToken = GetToken(MobileUserRole.Admin);
 
             var req = new HttpRequestMessage(HttpMethod.Post, "/api/bills/601/print");
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", staffToken);
@@ -1121,7 +1162,7 @@ public class MobileWebServerTests : IDisposable
         try
         {
             var authService = _serviceProvider.GetRequiredService<IMobileAuthService>();
-            string staffToken = authService.GenerateToken(MobileUserRole.Staff);
+            string staffToken = GetToken(MobileUserRole.Staff);
 
             var req = new HttpRequestMessage(HttpMethod.Get, "/api/orders/701/label");
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", staffToken);
@@ -1161,7 +1202,7 @@ public class MobileWebServerTests : IDisposable
         await _webServer.StartAsync();
         try
         {
-            var token = _serviceProvider.GetRequiredService<IMobileAuthService>().GenerateToken(MobileUserRole.Staff);
+            var token = GetToken(MobileUserRole.Staff);
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
             var response = await _httpClient.PostAsync("/api/orders/1/gallery/requests", null);
@@ -1183,7 +1224,7 @@ public class MobileWebServerTests : IDisposable
         await _webServer.StartAsync();
         try
         {
-            var token = _serviceProvider.GetRequiredService<IMobileAuthService>().GenerateToken(MobileUserRole.Staff);
+            var token = GetToken(MobileUserRole.Staff);
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
             var response = await _httpClient.GetAsync("/api/orders/1/gallery?version=vtest123&offset=0&limit=24");
@@ -1205,7 +1246,7 @@ public class MobileWebServerTests : IDisposable
         await _webServer.StartAsync();
         try
         {
-            var token = _serviceProvider.GetRequiredService<IMobileAuthService>().GenerateToken(MobileUserRole.Staff);
+            var token = GetToken(MobileUserRole.Staff);
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
             var payload = new StringContent(
@@ -1228,13 +1269,13 @@ public class MobileWebServerTests : IDisposable
         await _webServer.StartAsync();
         try
         {
-            var staffToken = _serviceProvider.GetRequiredService<IMobileAuthService>().GenerateToken(MobileUserRole.Staff);
+            var staffToken = GetToken(MobileUserRole.Staff);
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", staffToken);
 
             var staffRes = await _httpClient.PostAsync("/api/settings/thumbnails/cleanup", null);
             staffRes.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-            var adminToken = _serviceProvider.GetRequiredService<IMobileAuthService>().GenerateToken(MobileUserRole.Admin);
+            var adminToken = GetToken(MobileUserRole.Admin);
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
 
             var adminRes = await _httpClient.PostAsync("/api/settings/thumbnails/cleanup", null);

@@ -8,6 +8,7 @@ using LalabAutoReport.Infrastructure.Reporting;
 using LalabAutoReport.Infrastructure.Services;
 using LalabAutoReport.Infrastructure.Web;
 using LalabAutoReport.Infrastructure.Windows;
+using LalabAutoReport.ApplicationCore.Auth;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -97,6 +98,13 @@ public static class LalabServiceRegistration
         services.AddSingleton<IGlobalSearchService, SqliteGlobalSearchService>();
 
         // Auth & Mobile Web Server
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<LoginRateLimiter>();
+        services.AddSingleton<IAuditLogger, SqliteAuditLogger>();
+        services.AddSingleton<IRoleCredentialStore, SqliteRoleCredentialStore>();
+        services.AddSingleton<ISessionStore, SqliteSessionStore>();
+        services.AddSingleton<ISessionService, SessionService>();
+        services.AddSingleton<CredentialPlaintextScrubber>();
         services.AddSingleton(new MobileWebServerOptions
         {
             LoopbackOnly = options.MobileWebServerLoopbackOnly,

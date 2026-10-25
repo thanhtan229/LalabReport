@@ -592,16 +592,28 @@
 
                                 <!-- Mã PIN Admin -->
                                 <StackPanel Grid.Column="2">
-                                    <TextBlock Text="Mã PIN Chủ tiệm (Admin):" FontSize="12" Foreground="{StaticResource Tinix.Color.Text.Secondary}" Margin="0,0,0,6"/>
+                                    <DockPanel Margin="0,0,0,6">
+                                        <TextBlock Text="Mã PIN Chủ tiệm (Admin):" FontSize="12" Foreground="{StaticResource Tinix.Color.Text.Secondary}" DockPanel.Dock="Left"/>
+                                        <TextBlock Text="{Binding AdminPinStatusText, StringFormat='({0})'}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource Tinix.Color.Text.Muted}" HorizontalAlignment="Right"/>
+                                    </DockPanel>
                                     <TextBox Text="{Binding AdminPin, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource Tinix.TextBox.Standard}" Height="36" FontSize="13" ToolTip="Xem toàn quyền: Báo cáo tài chính, công nợ, đơn hàng, tem giao"/>
+                                    <TextBlock Text="Để trống nếu không đổi" FontSize="11" Foreground="{StaticResource Tinix.Color.Text.Muted}" Margin="0,3,0,6"/>
+                                    <Button Command="{Binding ClearAdminPinCommand}" Content="Xóa PIN Admin" Style="{StaticResource Tinix.Button.Secondary}" Height="28" FontSize="11" HorizontalAlignment="Left" Padding="12,0"/>
                                 </StackPanel>
 
                                 <!-- Mã PIN Staff -->
                                 <StackPanel Grid.Column="4">
-                                    <TextBlock Text="Mã PIN Nhân viên (In ấn):" FontSize="12" Foreground="{StaticResource Tinix.Color.Text.Secondary}" Margin="0,0,0,6"/>
+                                    <DockPanel Margin="0,0,0,6">
+                                        <TextBlock Text="Mã PIN Nhân viên (In ấn):" FontSize="12" Foreground="{StaticResource Tinix.Color.Text.Secondary}" DockPanel.Dock="Left"/>
+                                        <TextBlock Text="{Binding StaffPinStatusText, StringFormat='({0})'}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource Tinix.Color.Text.Muted}" HorizontalAlignment="Right"/>
+                                    </DockPanel>
                                     <TextBox Text="{Binding StaffPin, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource Tinix.TextBox.Standard}" Height="36" FontSize="13" ToolTip="Chỉ xem đơn hàng, quy cách in, tem giao hàng. Không xem doanh thu và công nợ"/>
+                                    <TextBlock Text="Để trống nếu không đổi" FontSize="11" Foreground="{StaticResource Tinix.Color.Text.Muted}" Margin="0,3,0,6"/>
+                                    <Button Command="{Binding ClearStaffPinCommand}" Content="Xóa PIN Nhân viên" Style="{StaticResource Tinix.Button.Secondary}" Height="28" FontSize="11" HorizontalAlignment="Left" Padding="12,0"/>
                                 </StackPanel>
                             </Grid>
+
+                            <TextBlock Text="{Binding PinStatusMessage}" Foreground="{StaticResource Tinix.Color.Info}" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,12" TextWrapping="Wrap"/>
 
 
 

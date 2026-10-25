@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>LalabAutoReport.ApplicationCore</RootNamespace>
+    <Version>2.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LalabAutoReport.Contracts\LalabAutoReport.Contracts.csproj" />
+    <ProjectReference Include="..\LalabAutoReport.Core\LalabAutoReport.Core.csproj" />
+  </ItemGroup>
+
+</Project>

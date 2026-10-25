@@ -11,6 +11,8 @@ using LalabAutoReport.Core.Domain;
 using LalabAutoReport.Core.Interfaces;
 using LalabAutoReport.Core.Services;
 using LalabAutoReport.Infrastructure.Services;
+using LalabAutoReport.ApplicationCore.Auth;
+using LalabAutoReport.Contracts;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -21,6 +23,10 @@ namespace LalabAutoReport.Infrastructure.Web;
 
 public class KestrelMobileWebServer : IMobileWebServer, IDisposable
 {
+    private static readonly Regex ImageQueryTokenAllowedRegex = new(
+        @"^/api/(orders/\d+/(thumbnail|gallery/images/[^/]+|label)|bills/\d+/(image|label|qr))/?$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private static readonly Regex GalleryAllowedPathRegex = new(
         @"^/api/orders/[^/]+/gallery/(requests|touch)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -75,7 +81,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             return true;
         }
 
-        if (!HttpMethods.IsPost(method))
+        if (!HttpMethods.IsPost(method) && !HttpMethods.IsDelete(method))
         {
             return false;
         }
@@ -93,7 +99,10 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
         }
         cleanPath = cleanPath.TrimEnd('/');
 
-        if (string.Equals(cleanPath, "/api/auth/login", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(cleanPath, "/api/auth/login", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(cleanPath, "/api/v1/auth/sessions", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(cleanPath, "/api/v1/auth/sessions/current", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(cleanPath, "/api/v1/admin/sessions/revoke-all", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
@@ -205,6 +214,35 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
 
     private void ConfigureEndpoints(WebApplication app)
     {
+        app.Use(async (ctx, next) =>
+        {
+            try
+            {
+                var actor = await AuthenticateAsync(ctx);
+                ctx.Items["ActorContext"] = actor;
+
+            if (ctx.Items.TryGetValue("LegacyTokenWrite", out var ltw) && ltw is true)
+            {
+                ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                ctx.Response.ContentType = "application/json; charset=utf-8";
+                await ctx.Response.WriteAsJsonAsync(new
+                {
+                    success = false,
+                    code = ApiErrorCodes.SessionUpgradeRequired,
+                    message = "Phiên đã hết hiệu lực, vui lòng nhập lại PIN."
+                });
+                return;
+            }
+
+            await next();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("REQUEST FAILED: " + ex);
+                throw;
+            }
+        });
+
         if (_options.ReadOnlyMode)
         {
             app.Use(async (ctx, next) =>
@@ -250,6 +288,49 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             string pin = doc.RootElement.TryGetProperty("pin", out var pinElem) ? pinElem.GetString() ?? "" : "";
             var settings = await _settingsRepository.GetSettingsAsync();
 
+            if (!settings.AdminPinConfigured && string.IsNullOrWhiteSpace(settings.AdminPin))
+            {
+                return Results.Json(new { success = false, message = "Chưa cấu hình mã PIN Admin trên ứng dụng Desktop. Vui lòng vào Cài đặt để thiết lập mã PIN." }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            if (!string.IsNullOrEmpty(settings.AdminPin) && !string.IsNullOrEmpty(settings.StaffPin) &&
+                string.Equals(settings.AdminPin, settings.StaffPin, StringComparison.Ordinal))
+            {
+                return Results.Json(new { success = false, message = "Mã PIN Admin và Nhân viên không được trùng nhau. Vui lòng cập nhật lại trong Cài đặt." }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            var sessionService = _serviceProvider.GetService<ISessionService>();
+            if (sessionService != null)
+            {
+                string ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+                var result = await sessionService.LoginAsync(pin, clientKind: "pwa", ip: ip);
+
+                if (result.Status == LoginResultStatus.RateLimited)
+                {
+                    int retrySec = (int)Math.Ceiling(result.RetryAfter?.TotalSeconds ?? 60);
+                    ctx.Response.Headers.RetryAfter = retrySec.ToString();
+                    return Results.Json(new { success = false, code = ApiErrorCodes.LoginRateLimited, message = "Quá nhiều lần thử sai. Vui lòng thử lại sau." }, statusCode: StatusCodes.Status429TooManyRequests);
+                }
+
+                if (result.Status == LoginResultStatus.NotConfigured)
+                {
+                    return Results.Json(new { success = false, message = "Chưa cấu hình mã PIN Admin trên ứng dụng Desktop. Vui lòng vào Cài đặt để thiết lập mã PIN." }, statusCode: StatusCodes.Status503ServiceUnavailable);
+                }
+
+                if (result.Status == LoginResultStatus.InvalidCredentials || result.Role == null || result.Token == null)
+                {
+                    return Results.Json(new { success = false, message = "Mã PIN không chính xác." }, statusCode: StatusCodes.Status401Unauthorized);
+                }
+
+                return Results.Ok(new
+                {
+                    success = true,
+                    role = result.Role,
+                    token = result.Token,
+                    workshopName = settings.WorkshopName
+                });
+            }
+
             if (string.IsNullOrWhiteSpace(settings.AdminPin))
             {
                 return Results.Json(new { success = false, message = "Chưa cấu hình mã PIN Admin trên ứng dụng Desktop. Vui lòng vào Cài đặt để thiết lập mã PIN." }, statusCode: StatusCodes.Status503ServiceUnavailable);
@@ -286,7 +367,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             return Results.Ok(new
             {
                 authenticated = true,
-                role = auth.Role!.Value.ToString(),
+                role = auth.Role,
                 workshopName = settings.WorkshopName,
                 workshopPhone = settings.WorkshopPhone,
                 workshopAddress = settings.WorkshopAddress
@@ -529,7 +610,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
         {
             var auth = CheckAuth(ctx);
             if (!auth.IsAuthenticated) return Results.Unauthorized();
-            if (auth.Role != MobileUserRole.Admin) return Results.StatusCode(StatusCodes.Status403Forbidden);
+            if (!auth.Has(Capabilities.AdminMaintenance)) return Results.StatusCode(StatusCodes.Status403Forbidden);
 
             var thumbService = _serviceProvider.GetRequiredService<IThumbnailService>();
             var settings = await _settingsRepository.GetSettingsAsync(ctx.RequestAborted);
@@ -552,7 +633,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
         {
             var auth = CheckAuth(ctx);
             if (!auth.IsAuthenticated) return Results.Unauthorized();
-            if (auth.Role != MobileUserRole.Admin) return Results.StatusCode(StatusCodes.Status403Forbidden);
+            if (!auth.Has(Capabilities.AdminMaintenance)) return Results.StatusCode(StatusCodes.Status403Forbidden);
 
             var thumbService = _serviceProvider.GetRequiredService<IThumbnailService>();
             var summary = await thumbService.ClearAllDiskCacheAsync(ctx.RequestAborted);
@@ -619,7 +700,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
 
             bool newStatus = !order.IsDelivered;
             DateTimeOffset? deliveredAt = newStatus ? DateTimeOffset.Now : null;
-            string? deliveredBy = newStatus ? (auth.Role == MobileUserRole.Admin ? "Chủ tiệm" : "Nhân viên") : null;
+            string? deliveredBy = newStatus ? (auth.Role == "Admin" ? "Chủ tiệm" : "Nhân viên") : null;
 
             await orderRepo.UpdateOrderDeliveredStatusAsync(id, newStatus, deliveredAt, deliveredBy);
 
@@ -704,7 +785,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
 
             long? billId = order.Items?.FirstOrDefault(i => i.CustomerBillId != null)?.CustomerBillId;
             CustomerBill? bill = null;
-            if (auth.Role == MobileUserRole.Admin && billId.HasValue)
+            if (auth.Has(Capabilities.FinanceRead) && billId.HasValue)
             {
                 bill = await billRepo.GetByIdAsync(billId.Value);
             }
@@ -733,7 +814,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             if (settings.AutoMarkDeliveredOnPrint)
             {
                 deliveredAt = DateTimeOffset.Now;
-                deliveredBy = auth.Role == MobileUserRole.Admin ? "Chủ tiệm (Mobile)" : "Nhân viên (Mobile)";
+                deliveredBy = auth.Role == "Admin" ? "Chủ tiệm (Mobile)" : "Nhân viên (Mobile)";
                 await orderRepo.UpdateOrderDeliveredStatusAsync(id, true, deliveredAt, deliveredBy);
                 markedDelivered = true;
             }
@@ -765,7 +846,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             var billRepo = _serviceProvider.GetRequiredService<ICustomerBillRepository>();
 
             long? billId = order.Items?.FirstOrDefault(i => i.CustomerBillId != null)?.CustomerBillId;
-            if (auth.Role == MobileUserRole.Admin && billId.HasValue)
+            if (auth.Has(Capabilities.FinanceRead) && billId.HasValue)
             {
                 var bill = await billRepo.GetByIdAsync(billId.Value);
                 if (bill != null)
@@ -811,7 +892,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             var bill = await billRepo.GetByIdAsync(id);
             if (bill == null) return Results.NotFound(new { message = "Không tìm thấy hóa đơn" });
 
-            bool isAdmin = auth.Role == MobileUserRole.Admin;
+            bool isAdmin = auth.Has(Capabilities.FinanceRead);
             var billSettings = await _settingsRepository.GetSettingsAsync();
 
             return Results.Ok(new
@@ -860,7 +941,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
         {
             var auth = CheckAuth(ctx);
             if (!auth.IsAuthenticated) return Results.Unauthorized();
-            if (auth.Role != MobileUserRole.Admin) return Results.StatusCode(403);
+            if (!auth.Has(Capabilities.FinanceRead)) return Results.StatusCode(403);
 
             var billRepo = _serviceProvider.GetRequiredService<ICustomerBillRepository>();
             var bill = await billRepo.GetByIdAsync(id);
@@ -884,7 +965,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
         {
             var auth = CheckAuth(ctx);
             if (!auth.IsAuthenticated) return Results.Unauthorized();
-            if (auth.Role != MobileUserRole.Admin) return Results.StatusCode(403);
+            if (!auth.Has(Capabilities.FinanceRead)) return Results.StatusCode(403);
 
             var billRepo = _serviceProvider.GetRequiredService<ICustomerBillRepository>();
             var bill = await billRepo.GetByIdAsync(id);
@@ -914,7 +995,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
         {
             var auth = CheckAuth(ctx);
             if (!auth.IsAuthenticated) return Results.Unauthorized();
-            if (auth.Role != MobileUserRole.Admin) return Results.StatusCode(403);
+            if (!auth.Has(Capabilities.FinanceRead)) return Results.StatusCode(403);
 
             var labelExporter = _serviceProvider.GetRequiredService<IShippingLabelExporter>();
             var billRepo = _serviceProvider.GetRequiredService<ICustomerBillRepository>();
@@ -964,7 +1045,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
         {
             var auth = CheckAuth(ctx);
             if (!auth.IsAuthenticated) return Results.Unauthorized();
-            if (auth.Role != MobileUserRole.Admin) return Results.StatusCode(403);
+            if (!auth.Has(Capabilities.FinanceRead)) return Results.StatusCode(403);
 
             var billRepo = _serviceProvider.GetRequiredService<ICustomerBillRepository>();
             var orderRepo = _serviceProvider.GetRequiredService<IOrderRepository>();
@@ -1011,7 +1092,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             if (settings.AutoMarkDeliveredOnPrint)
             {
                 deliveredAt = DateTimeOffset.Now;
-                deliveredBy = auth.Role == MobileUserRole.Admin ? "Chủ tiệm (Mobile)" : "Nhân viên (Mobile)";
+                deliveredBy = auth.Role == "Admin" ? "Chủ tiệm (Mobile)" : "Nhân viên (Mobile)";
 
                 if (bill?.Orders != null && bill.Orders.Count > 0)
                 {
@@ -1049,7 +1130,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
         {
             var auth = CheckAuth(ctx);
             if (!auth.IsAuthenticated) return Results.Unauthorized();
-            if (auth.Role != MobileUserRole.Admin) return Results.StatusCode(403);
+            if (!auth.Has(Capabilities.FinanceRead)) return Results.StatusCode(403);
 
             var billRepo = _serviceProvider.GetRequiredService<ICustomerBillRepository>();
             var bill = await billRepo.GetByIdAsync(id);
@@ -1080,7 +1161,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
         {
             var auth = CheckAuth(ctx);
             if (!auth.IsAuthenticated) return Results.Unauthorized();
-            if (auth.Role != MobileUserRole.Admin) return Results.StatusCode(StatusCodes.Status403Forbidden);
+            if (!auth.Has(Capabilities.FinanceRead)) return Results.StatusCode(StatusCodes.Status403Forbidden);
 
             string date = ctx.Request.Query.TryGetValue("date", out var d) ? d.ToString() : DateTime.Today.ToString("yyyy-MM-dd");
             var reportService = _serviceProvider.GetRequiredService<IReportService>();
@@ -1094,7 +1175,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
         {
             var auth = CheckAuth(ctx);
             if (!auth.IsAuthenticated) return Results.Unauthorized();
-            if (auth.Role != MobileUserRole.Admin) return Results.StatusCode(StatusCodes.Status403Forbidden);
+            if (!auth.Has(Capabilities.FinanceRead)) return Results.StatusCode(StatusCodes.Status403Forbidden);
 
             int year = ctx.Request.Query.TryGetValue("year", out var y) && int.TryParse(y, out var parsedY) ? parsedY : DateTime.Today.Year;
             int month = ctx.Request.Query.TryGetValue("month", out var m) && int.TryParse(m, out var parsedM) ? parsedM : DateTime.Today.Month;
@@ -1110,7 +1191,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
         {
             var auth = CheckAuth(ctx);
             if (!auth.IsAuthenticated) return Results.Unauthorized();
-            if (auth.Role != MobileUserRole.Admin) return Results.StatusCode(StatusCodes.Status403Forbidden);
+            if (!auth.Has(Capabilities.FinanceRead)) return Results.StatusCode(StatusCodes.Status403Forbidden);
 
             var billRepo = _serviceProvider.GetRequiredService<ICustomerBillRepository>();
             var unpaidBills = await billRepo.GetUnpaidBillsAsync();
@@ -1145,6 +1226,9 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             await ctx.Response.WriteAsync("self.addEventListener('install', e => self.skipWaiting()); self.addEventListener('activate', e => e.waitUntil(clients.claim())); self.addEventListener('fetch', e => e.respondWith(fetch(e.request)));");
         });
 
+        // Api v1 endpoints (Phase 2 Auth)
+        app.MapApiV1(_serviceProvider);
+
         // 13. Mobile SPA HTML / Assets fallback
         app.MapFallback(async (HttpContext ctx) =>
         {
@@ -1165,7 +1249,17 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
         });
     }
 
-    private (bool IsAuthenticated, MobileUserRole? Role) CheckAuth(HttpContext ctx)
+    private ActorContext CheckAuth(HttpContext ctx)
+    {
+        if (ctx.Items.TryGetValue("ActorContext", out var obj) && obj is ActorContext actor)
+        {
+            return actor;
+        }
+
+        return AuthenticateAsync(ctx).GetAwaiter().GetResult();
+    }
+
+    public async Task<ActorContext> AuthenticateAsync(HttpContext ctx)
     {
         string? token = null;
 
@@ -1180,22 +1274,77 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
 
         if (string.IsNullOrWhiteSpace(token))
         {
-            if (ctx.Request.Query.TryGetValue("token", out var queryToken))
+            if (HttpMethods.IsGet(ctx.Request.Method))
             {
-                token = queryToken.ToString().Trim();
-            }
-            else if (ctx.Request.Query.TryGetValue("auth", out var queryAuth))
-            {
-                token = queryAuth.ToString().Trim();
+                string path = ctx.Request.Path.Value ?? "";
+                if (ImageQueryTokenAllowedRegex.IsMatch(path) && (ctx.Request.Query.TryGetValue("token", out var queryToken) || ctx.Request.Query.TryGetValue("auth", out queryToken)))
+                {
+                    token = queryToken.ToString().Trim();
+                }
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(token) && _authService.TryValidateToken(token, out var role))
+        if (string.IsNullOrWhiteSpace(token))
         {
-            return (true, role);
+            return ActorContext.Anonymous();
         }
 
-        return (false, null);
+        if (token.StartsWith("lsv2.", StringComparison.Ordinal))
+        {
+            var sessionService = _serviceProvider.GetService<ISessionService>();
+            if (sessionService != null)
+            {
+                var v2Actor = await sessionService.ValidateTokenAsync(token);
+                if (v2Actor != null)
+                {
+                    return v2Actor;
+                }
+            }
+            return ActorContext.Anonymous();
+        }
+
+        string reqPath = ctx.Request.Path.Value ?? "";
+        if (reqPath.StartsWith("/api/v1", StringComparison.OrdinalIgnoreCase))
+        {
+            return ActorContext.Anonymous();
+        }
+
+        if (!_authService.TryValidateToken(token, out var role, out var issuedAt))
+        {
+            return ActorContext.Anonymous();
+        }
+
+        if (!HttpMethods.IsGet(ctx.Request.Method) && !HttpMethods.IsHead(ctx.Request.Method))
+        {
+            ctx.Items["LegacyTokenWrite"] = true;
+            return ActorContext.Anonymous();
+        }
+
+        var credStore = _serviceProvider.GetService<IRoleCredentialStore>();
+        DateTimeOffset legacyGraceUntil = DateTimeOffset.MaxValue;
+        DateTimeOffset legacyIssuedCutoff = DateTimeOffset.MinValue;
+        if (credStore != null)
+        {
+            try
+            {
+                var status = await credStore.GetStatusAsync();
+                legacyGraceUntil = status.LegacyTokensValidUntilUtc;
+                legacyIssuedCutoff = status.LegacyTokensIssuedBeforeUtc;
+            }
+            catch { }
+        }
+
+        if (DateTimeOffset.UtcNow >= legacyGraceUntil)
+        {
+            return ActorContext.Anonymous();
+        }
+
+        if (issuedAt < legacyIssuedCutoff)
+        {
+            return ActorContext.FromLegacyToken(role.ToString(), RoleCapabilityMap.GetCapabilities(role.ToString()));
+        }
+
+        return ActorContext.Anonymous();
     }
 
     private static string GetManifestJson()

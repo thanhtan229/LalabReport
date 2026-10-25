@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using LalabAutoReport.ApplicationCore.Auth;
 using LalabAutoReport.Core.Domain;
 using LalabAutoReport.Core.Interfaces;
 using LalabAutoReport.UI.Services;
@@ -31,6 +32,7 @@ public partial class SettingsViewModel : ObservableObject
     private readonly IShippingLabelExporter? _shippingLabelExporter;
     private readonly ISystemTrayManager? _systemTrayManager;
     private readonly ICloudSyncService? _cloudSyncService;
+    private readonly IRoleCredentialStore? _credentialStore;
 
     [ObservableProperty]
     private bool _enableCloudSync = true;
@@ -92,6 +94,55 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private string _staffPin = string.Empty;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ClearAdminPinCommand))]
+    private bool _isAdminPinConfigured;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ClearStaffPinCommand))]
+    private bool _isStaffPinConfigured;
+
+    [ObservableProperty]
+    private string _adminPinStatusText = "Chưa thiết lập";
+
+    [ObservableProperty]
+    private string _staffPinStatusText = "Chưa thiết lập";
+
+    [ObservableProperty]
+    private string _pinStatusMessage = string.Empty;
+
+    public Func<string, string, MessageBoxButton, MessageBoxImage, MessageBoxResult> ClearPinConfirmFunc { get; set; } = (msg, title, btn, img) =>
+    {
+        if (Application.Current != null)
+        {
+            try { return MessageBox.Show(msg, title, btn, img); } catch { return MessageBoxResult.No; }
+        }
+        return MessageBoxResult.No;
+    };
+
+    public Action<string, string, MessageBoxButton, MessageBoxImage>? ShowMessageAction { get; set; }
+
+    private void ShowMessage(string message, string title, MessageBoxButton button = MessageBoxButton.OK, MessageBoxImage image = MessageBoxImage.Information)
+    {
+        if (ShowMessageAction != null)
+        {
+            ShowMessageAction(message, title, button, image);
+            return;
+        }
+
+        if (Application.Current != null)
+        {
+            try
+            {
+                MessageBox.Show(message, title, button, image);
+            }
+            catch
+            {
+                // Suppress GUI failures in non-interactive environments
+            }
+        }
+    }
 
     [ObservableProperty]
     private string _mobileServerStatusText = "Đang kiểm tra...";
@@ -345,7 +396,8 @@ public partial class SettingsViewModel : ObservableObject
         IThumbnailService? thumbnailService = null,
         IShippingLabelExporter? shippingLabelExporter = null,
         ISystemTrayManager? systemTrayManager = null,
-        ICloudSyncService? cloudSyncService = null)
+        ICloudSyncService? cloudSyncService = null,
+        IRoleCredentialStore? credentialStore = null)
     {
         _settingsRepository = settingsRepository;
         _backupService = backupService;
@@ -361,6 +413,7 @@ public partial class SettingsViewModel : ObservableObject
         _shippingLabelExporter = shippingLabelExporter;
         _systemTrayManager = systemTrayManager;
         _cloudSyncService = cloudSyncService;
+        _credentialStore = credentialStore;
 
         if (_cloudSyncService != null)
         {
@@ -420,8 +473,9 @@ public partial class SettingsViewModel : ObservableObject
 
             EnableMobileServer = settings.EnableMobileServer;
             MobileServerPort = settings.MobileServerPort > 0 ? settings.MobileServerPort : 5050;
-            AdminPin = settings.AdminPin ?? string.Empty;
-            StaffPin = settings.StaffPin ?? string.Empty;
+            AdminPin = string.Empty;
+            StaffPin = string.Empty;
+            await RefreshPinStatusAsync(settings);
             ShowOrderThumbnails = settings.ShowOrderThumbnails;
             EnableThumbnailAutoCleanup = settings.EnableThumbnailAutoCleanup;
             ThumbnailRetentionDays = (settings.ThumbnailRetentionDays == 30 || settings.ThumbnailRetentionDays == 90) ? settings.ThumbnailRetentionDays : 60;
@@ -861,7 +915,10 @@ public partial class SettingsViewModel : ObservableObject
     {
         if (!string.IsNullOrWhiteSpace(AdminPin) && !string.IsNullOrWhiteSpace(StaffPin) && string.Equals(AdminPin.Trim(), StaffPin.Trim(), StringComparison.Ordinal))
         {
-            MessageBox.Show("Mã PIN Admin và mã PIN Nhân viên không được trùng nhau.", "Lỗi cấu hình", MessageBoxButton.OK, MessageBoxImage.Warning);
+            string duplicateMsg = "Mã PIN Admin và mã PIN Nhân viên không được trùng nhau.";
+            PinStatusMessage = duplicateMsg;
+            StatusMessage = duplicateMsg;
+            ShowMessage(duplicateMsg, "Lỗi cấu hình", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         var exts = SupportedExtensions
@@ -917,12 +974,111 @@ public partial class SettingsViewModel : ObservableObject
             CloudSyncSecret = string.IsNullOrWhiteSpace(CloudSyncSecret) ? "" : CloudSyncSecret.Trim()
         };
 
-        await _settingsRepository.SaveSettingsAsync(settings);
-        WindowsStartupHelper.SetAutoStart(AutoStartWithWindows);
+        try
+        {
+            await _settingsRepository.SaveSettingsAsync(settings);
+            WindowsStartupHelper.SetAutoStart(AutoStartWithWindows);
 
-        StatusMessage = "Đã lưu cài đặt thành công!";
-        SettingsSaved?.Invoke();
-        UpdateMobileServerStatusAndQrs();
+            AdminPin = string.Empty;
+            StaffPin = string.Empty;
+            await RefreshPinStatusAsync();
+
+            StatusMessage = "Đã lưu cài đặt thành công!";
+            PinStatusMessage = string.Empty;
+            SettingsSaved?.Invoke();
+            UpdateMobileServerStatusAndQrs();
+        }
+        catch (Exception ex)
+        {
+            string err = $"Lỗi lưu cài đặt: {ex.Message}";
+            StatusMessage = err;
+            PinStatusMessage = err;
+            ShowMessage(ex.Message, "Lỗi lưu cài đặt", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    public async Task RefreshPinStatusAsync(AppSettings? preloadedSettings = null)
+    {
+        if (_credentialStore != null)
+        {
+            try
+            {
+                var credStatus = await _credentialStore.GetStatusAsync();
+                IsAdminPinConfigured = credStatus.AdminPinConfigured;
+                IsStaffPinConfigured = credStatus.StaffPinConfigured;
+            }
+            catch
+            {
+                var settings = preloadedSettings ?? await _settingsRepository.GetSettingsAsync();
+                IsAdminPinConfigured = settings.AdminPinConfigured;
+                IsStaffPinConfigured = settings.StaffPinConfigured;
+            }
+        }
+        else
+        {
+            var settings = preloadedSettings ?? await _settingsRepository.GetSettingsAsync();
+            IsAdminPinConfigured = settings.AdminPinConfigured;
+            IsStaffPinConfigured = settings.StaffPinConfigured;
+        }
+
+        AdminPinStatusText = IsAdminPinConfigured ? "Đã thiết lập" : "Chưa thiết lập";
+        StaffPinStatusText = IsStaffPinConfigured ? "Đã thiết lập" : "Chưa thiết lập";
+        ClearAdminPinCommand.NotifyCanExecuteChanged();
+        ClearStaffPinCommand.NotifyCanExecuteChanged();
+    }
+
+    [RelayCommand(CanExecute = nameof(IsAdminPinConfigured))]
+    private async Task ClearAdminPinAsync()
+    {
+        await ClearPinForRoleAsync("Admin", "Admin");
+    }
+
+    [RelayCommand(CanExecute = nameof(IsStaffPinConfigured))]
+    private async Task ClearStaffPinAsync()
+    {
+        await ClearPinForRoleAsync("Staff", "Nhân viên");
+    }
+
+    private async Task ClearPinForRoleAsync(string role, string roleDisplayName)
+    {
+        var confirm = ClearPinConfirmFunc(
+            $"Bạn có chắc chắn muốn xóa mã PIN của vai trò {roleDisplayName} không?\n\nLưu ý: Tất cả các phiên đăng nhập ứng dụng trên điện thoại (PWA) của vai trò này sẽ bị đăng xuất ngay lập tức.",
+            $"Xác nhận xóa mã PIN {roleDisplayName}",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (confirm != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_credentialStore != null)
+            {
+                await _credentialStore.ClearPinAsync(role, ActorContext.LocalDesktop(role));
+            }
+
+            AdminPin = string.Empty;
+            StaffPin = string.Empty;
+            await RefreshPinStatusAsync();
+
+            string msg = $"Đã xóa mã PIN {roleDisplayName} thành công. Toàn bộ phiên đăng nhập PWA hiện tại của vai trò này đã bị đăng xuất.";
+            PinStatusMessage = msg;
+            StatusMessage = msg;
+            ShowMessage(
+                $"Đã xóa mã PIN {roleDisplayName} thành công.\n\nToàn bộ phiên làm việc trên điện thoại (PWA) của vai trò này đã được đăng xuất để đảm bảo an toàn.",
+                "Đã xóa mã PIN",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            string err = $"Lỗi xóa mã PIN {roleDisplayName}: {ex.Message}";
+            PinStatusMessage = err;
+            StatusMessage = err;
+            ShowMessage(err, "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     [RelayCommand]

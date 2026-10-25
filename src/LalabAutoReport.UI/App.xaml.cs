@@ -24,7 +24,7 @@ using Serilog;
 
 namespace LalabAutoReport.UI;
 
-public partial class App : Application
+public partial class App : System.Windows.Application
 {
     private IServiceProvider? _serviceProvider;
     public IServiceProvider? Services => _serviceProvider;

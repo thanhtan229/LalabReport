@@ -293,7 +293,7 @@ public class ServerTests
             report.CloudOperationalOutboxPending.Should().Be(1);
             report.CloudPrintCommandLedgerUnacked.Should().Be(1);
             report.RootFolders.Should().Be(1);
-            report.SchemaMigrationsMaxVersion.Should().Be(24);
+            report.SchemaMigrationsMaxVersion.Should().Be(LalabAutoReport.Infrastructure.Data.DatabaseMigrator.LatestVersion);
 
             // Clear pool again to read bytes safely
             SqliteConnection.ClearAllPools();
@@ -1172,7 +1172,7 @@ public class ServerTests
             {
                 await conn.OpenAsync();
                 using var cmd = conn.CreateCommand();
-                cmd.CommandText = "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY); INSERT INTO schema_migrations VALUES (24);";
+                cmd.CommandText = "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY); INSERT INTO schema_migrations VALUES (" + LalabAutoReport.Infrastructure.Data.DatabaseMigrator.LatestVersion + ");";
                 await cmd.ExecuteNonQueryAsync();
             }
             SqliteConnection.ClearAllPools();

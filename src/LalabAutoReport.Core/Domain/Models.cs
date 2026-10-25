@@ -464,6 +464,8 @@ public class AppSettings
     public int MobileServerPort { get; set; } = 5050;
     public string AdminPin { get; set; } = string.Empty;
     public string StaffPin { get; set; } = string.Empty;
+    public bool AdminPinConfigured { get; set; }
+    public bool StaffPinConfigured { get; set; }
     public bool ShowOrderThumbnails { get; set; } = true;
     public string MobileAuthSecret { get; set; } = string.Empty;
 

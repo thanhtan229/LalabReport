@@ -7,11 +7,13 @@ using LalabAutoReport.Core.Interfaces;
 using LalabAutoReport.Core.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
+using LalabAutoReport.ApplicationCore.Auth;
 
 namespace LalabAutoReport.Infrastructure.Data;
 
 public class DatabaseMigrator : IDatabaseMigrator
 {
+    public const int LatestVersion = 26;
     private readonly ISqliteConnectionFactory _connectionFactory;
     private readonly IDatabaseBackupService? _backupService;
     private readonly ILogger<DatabaseMigrator>? _logger;
@@ -794,8 +796,146 @@ public class DatabaseMigrator : IDatabaseMigrator
                         CreatedAt = DateTimeOffset.UtcNow.ToString("o")
                     }, transaction: tx);
                 }
-            }
+            },
+            new MigrationDefinition
+            {
+                Version = 25,
+                Name = "AuthCredentials",
+                Sql = @"
+                CREATE TABLE IF NOT EXISTS auth_credentials (
+                    role              TEXT PRIMARY KEY,
+                    algorithm         TEXT NOT NULL,
+                    iterations        INTEGER NOT NULL,
+                    salt              BLOB,
+                    hash              BLOB,
+                    credential_epoch  INTEGER NOT NULL DEFAULT 1,
+                    updated_at_utc    TEXT NOT NULL
+                ) WITHOUT ROWID;
 
+                CREATE TABLE IF NOT EXISTS auth_state (
+                    id                                INTEGER PRIMARY KEY CHECK (id = 1),
+                    legacy_tokens_issued_before_utc   TEXT NOT NULL,
+                    legacy_tokens_accepted_until_utc  TEXT NOT NULL
+                );
+                ",
+                PostAction = async (conn, tx, logger) =>
+                {
+                    string nowIso = DateTimeOffset.UtcNow.ToString("o");
+                    string graceUntilIso = DateTimeOffset.UtcNow.AddDays(7).ToString("o");
+
+                    int settingsTableExists = await conn.ExecuteScalarAsync<int>(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='app_settings';",
+                        transaction: tx);
+
+                    string adminPin = "";
+                    string staffPin = "";
+                    if (settingsTableExists > 0)
+                    {
+                        var pinRows = (await conn.QueryAsync<(string Key, string Value)>(
+                            "SELECT key, value FROM app_settings WHERE key IN ('AdminPin', 'StaffPin');",
+                            transaction: tx)).ToDictionary(r => r.Key, r => r.Value, StringComparer.OrdinalIgnoreCase);
+
+                        adminPin = pinRows.TryGetValue("AdminPin", out var ap) ? (ap?.Trim() ?? "") : "";
+                        staffPin = pinRows.TryGetValue("StaffPin", out var sp) ? (sp?.Trim() ?? "") : "";
+                    }
+
+                    byte[]? adminSalt = null;
+                    byte[]? adminHash = null;
+                    if (!string.IsNullOrEmpty(adminPin))
+                    {
+                        adminSalt = Pbkdf2PinHasher.GenerateSalt();
+                        adminHash = Pbkdf2PinHasher.Hash(adminPin, adminSalt, Pbkdf2PinHasher.DefaultIterations);
+                    }
+
+                    await conn.ExecuteAsync(@"
+                        INSERT OR IGNORE INTO auth_credentials (role, algorithm, iterations, salt, hash, credential_epoch, updated_at_utc)
+                        VALUES ('Admin', 'PBKDF2-SHA256', @Iterations, @Salt, @Hash, 1, @UpdatedAt);
+                    ", new
+                    {
+                        Iterations = Pbkdf2PinHasher.DefaultIterations,
+                        Salt = adminSalt,
+                        Hash = adminHash,
+                        UpdatedAt = nowIso
+                    }, transaction: tx);
+
+                    if (adminHash != null)
+                    {
+                        await conn.ExecuteAsync(@"
+                            UPDATE auth_credentials
+                            SET salt = @Salt, hash = @Hash, updated_at_utc = @UpdatedAt
+                            WHERE role = 'Admin' AND hash IS NULL;
+                        ", new { Salt = adminSalt, Hash = adminHash, UpdatedAt = nowIso }, transaction: tx);
+                    }
+
+                    byte[]? staffSalt = null;
+                    byte[]? staffHash = null;
+                    if (!string.IsNullOrEmpty(staffPin) && (string.IsNullOrEmpty(adminPin) || !string.Equals(adminPin, staffPin, StringComparison.Ordinal)))
+                    {
+                        staffSalt = Pbkdf2PinHasher.GenerateSalt();
+                        staffHash = Pbkdf2PinHasher.Hash(staffPin, staffSalt, Pbkdf2PinHasher.DefaultIterations);
+                    }
+
+                    await conn.ExecuteAsync(@"
+                        INSERT OR IGNORE INTO auth_credentials (role, algorithm, iterations, salt, hash, credential_epoch, updated_at_utc)
+                        VALUES ('Staff', 'PBKDF2-SHA256', @Iterations, @Salt, @Hash, 1, @UpdatedAt);
+                    ", new
+                    {
+                        Iterations = Pbkdf2PinHasher.DefaultIterations,
+                        Salt = staffSalt,
+                        Hash = staffHash,
+                        UpdatedAt = nowIso
+                    }, transaction: tx);
+
+                    if (staffHash != null)
+                    {
+                        await conn.ExecuteAsync(@"
+                            UPDATE auth_credentials
+                            SET salt = @Salt, hash = @Hash, updated_at_utc = @UpdatedAt
+                            WHERE role = 'Staff' AND hash IS NULL;
+                        ", new { Salt = staffSalt, Hash = staffHash, UpdatedAt = nowIso }, transaction: tx);
+                    }
+
+                    if (settingsTableExists > 0)
+                    {
+                        await conn.ExecuteAsync(@"
+                            UPDATE app_settings SET value = '' WHERE key IN ('AdminPin', 'StaffPin');
+                        ", transaction: tx);
+                    }
+
+                    await conn.ExecuteAsync(@"
+                        INSERT OR IGNORE INTO auth_state (id, legacy_tokens_issued_before_utc, legacy_tokens_accepted_until_utc)
+                        VALUES (1, @IssuedBefore, @AcceptedUntil);
+                    ", new
+                    {
+                        IssuedBefore = nowIso,
+                        AcceptedUntil = graceUntilIso
+                    }, transaction: tx);
+                }
+            },
+            new MigrationDefinition
+            {
+                Version = 26,
+                Name = "AuthSessions",
+                Sql = @"
+                CREATE TABLE IF NOT EXISTS auth_sessions (
+                    session_id        TEXT PRIMARY KEY,
+                    token_hash        BLOB NOT NULL,
+                    role              TEXT NOT NULL,
+                    credential_epoch  INTEGER NOT NULL,
+                    client_kind       TEXT NOT NULL,
+                    device_id         TEXT,
+                    device_label      TEXT,
+                    issued_ip         TEXT,
+                    issued_at_utc     TEXT NOT NULL,
+                    expires_at_utc    TEXT NOT NULL,
+                    last_seen_at_utc  TEXT,
+                    revoked_at_utc    TEXT,
+                    revoked_reason    TEXT
+                ) WITHOUT ROWID;
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_auth_sessions_token_hash ON auth_sessions(token_hash);
+                CREATE INDEX IF NOT EXISTS idx_auth_sessions_role_active ON auth_sessions(role, revoked_at_utc, expires_at_utc);
+                "
+            }
         };
     }
 

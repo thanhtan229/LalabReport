@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LalabAutoReport.Core\LalabAutoReport.Core.csproj" />
+    <ProjectReference Include="..\LalabAutoReport.Application\LalabAutoReport.Application.csproj" />
     <ProjectReference Include="..\LalabAutoReport.Infrastructure\LalabAutoReport.Infrastructure.csproj" />
   </ItemGroup>
 
