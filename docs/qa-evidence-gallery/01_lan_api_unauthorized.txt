@@ -1,0 +1,11 @@
+=== POST /api/orders/7/gallery/requests ===
+ HTTP_STATUS:401
+
+=== GET /api/orders/7/gallery ===
+ HTTP_STATUS:401
+
+=== GET /api/orders/7/gallery/images/dummy ===
+ HTTP_STATUS:401
+
+=== POST /api/orders/7/gallery/touch ===
+ HTTP_STATUS:401

@@ -1,0 +1,80 @@
+{
+  "logged_in": true,
+  "grid_classes": [
+    "grid grid-cols-3 gap-2",
+    "grid grid-cols-3 gap-2",
+    "grid grid-cols-3 gap-2",
+    "grid grid-cols-3 gap-2",
+    "grid grid-cols-3 gap-2",
+    "grid grid-cols-3 gap-2"
+  ],
+  "has_3_column_grid": true,
+  "img_classes_sample": [
+    "w-full h-full object-contain",
+    "w-full h-full object-contain",
+    "w-full h-full object-contain",
+    "w-full h-full object-contain",
+    "w-full h-full object-contain"
+  ],
+  "all_images_object_contain": true,
+  "loading_attributes_sample": [
+    "lazy",
+    "lazy",
+    "lazy",
+    "lazy",
+    "lazy"
+  ],
+  "all_images_lazy_loading": true,
+  "file_names_count": 24,
+  "file_names_sample": [
+    "quang_print_001.jpg",
+    "quang_print_002.jpg",
+    "quang_print_003.jpg",
+    "quang_print_004.jpg",
+    "quang_print_005.jpg",
+    "quang_print_006.jpg"
+  ],
+  "unresolved_warning": [
+    "⚠️ Chưa xác định thư mục in"
+  ],
+  "corrupt_photo_02_state": {
+    "found": true,
+    "imgHidden": true,
+    "imgSrc": "http://127.0.0.1:5050/",
+    "errVisible": true,
+    "errText": "⚠️ Lỗi"
+  },
+  "has_load_more_button": true,
+  "load_more_button_text": "⬇ Tải tiếp 24 ảnh (24/33)",
+  "total_cards_after_load_more": 33,
+  "load_more_container_final_text": "Đã hiển thị toàn bộ 33 ảnh",
+  "console_errors_on_abort": 1,
+  "order_2_gallery_state": {
+    "title": "[DH-260929-002]",
+    "subtitle": "Tổng cộng: 0 ảnh",
+    "cards": 0,
+    "bodyText": "⚠️ Đơn hàng đã lập bill/khoá: Thư viện hiển thị ảnh hiện có trên ổ đĩa tại thời điểm xem.\nKhông có ảnh JPG/JPEG nào trong các thư mục in đã chọn.",
+    "currentGalleryOrderId": 2
+  },
+  "reopened_currentGalleryOrderId": 7,
+  "console_logs": [
+    {
+      "type": "warning",
+      "text": "cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    }
+  ],
+  "aborted_requests": [],
+  "failed_requests": []
+}

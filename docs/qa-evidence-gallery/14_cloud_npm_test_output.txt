@@ -1,0 +1,22 @@
+
+> lalab-cloud-worker@1.0.0 test
+> vitest run
+
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.3 [39m[90mD:/___TOOLS/__TINIX/LalabReport/cloud/worker[39m
+
+ [32mG£ô[39m test/bill-contract.spec.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32mG£ô[39m test/pwa-render.spec.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 51[2mms[22m[39m
+ [32mG£ô[39m test/health.spec.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 43[2mms[22m[39m
+ [32mG£ô[39m test/print-recovery.spec.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 56[2mms[22m[39m
+ [32mG£ô[39m test/permission-hardening.spec.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 52[2mms[22m[39m
+ [32mG£ô[39m test/auth-hardening.spec.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 56[2mms[22m[39m
+ [32mG£ô[39m test/gallery.spec.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 68[2mms[22m[39m
+ [32mG£ô[39m test/api.spec.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 71[2mms[22m[39m
+ [32mG£ô[39m test/versioned-sync.spec.ts [2m([22m[2m27 tests[22m[2m)[22m[32m 166[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m9 passed[39m[22m[90m (9)[39m
+[2m      Tests [22m [1m[32m89 passed[39m[22m[90m (89)[39m
+[2m   Start at [22m 16:07:57
+[2m   Duration [22m 559ms[2m (transform 48%, tests 29%, import 20%, worker 3%)[22m
+

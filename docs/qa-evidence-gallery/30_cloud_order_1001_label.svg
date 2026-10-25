@@ -1,0 +1,58 @@
+HTTP/1.1 200 OK
+Content-Length: 3719
+Content-Type: image/svg+xml; charset=utf-8
+Access-Control-Allow-Origin: *
+Cache-Control: no-cache
+Access-Control-Allow-Headers: Content-Type, Authorization, X-Sync-Secret, X-Operation-Id
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" width="800" height="480">
+  <rect x="0" y="0" width="800" height="480" fill="#ffffff"/>
+  <rect x="12" y="10" width="776" height="460" rx="8" fill="none" stroke="#000000" stroke-width="2.5"/>
+
+  <!-- Header -->
+  <text x="28" y="38" font-family="Segoe UI, -apple-system, sans-serif" font-size="17" font-weight="bold" fill="#000">XƯỞNG IN ẢNH CHUYÊN NGHIỆP</text>
+  <text x="770" y="38" text-anchor="end" font-family="Segoe UI, -apple-system, sans-serif" font-size="18" font-weight="bold" fill="#000">TEM GIAO HÀNG</text>
+
+  <line x1="12" y1="52" x2="788" y2="52" stroke="#000000" stroke-width="1.5"/>
+
+  <!-- Left Column: Recipient Info -->
+  <text x="28" y="80" font-family="Segoe UI, -apple-system, sans-serif" font-size="13" font-weight="bold" fill="#64748b">SỐ HÓA ĐƠN: <tspan fill="#000" font-size="15">ACCEPT-1001</tspan></text>
+  <text x="28" y="112" font-family="Segoe UI, -apple-system, sans-serif" font-size="13" font-weight="bold" fill="#64748b">NGƯỜI NHẬN:</text>
+  <text x="28" y="142" font-family="Segoe UI, -apple-system, sans-serif" font-size="22" font-weight="bold" fill="#000">Acceptance Customer</text>
+
+  <rect x="24" y="162" width="435" height="248" rx="4" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="38" y="188" font-family="Segoe UI, -apple-system, sans-serif" font-size="13" font-weight="bold" fill="#475569">ĐỊA CHỈ NHẬN HÀNG (IN TEM DÁN):</text>
+  <text x="38" y="218" font-family="Segoe UI, -apple-system, sans-serif" font-size="16" font-weight="600" fill="#000">Địa chỉ giao theo thông tin khách hàng</text>
+  <text x="38" y="246" font-family="Segoe UI, -apple-system, sans-serif" font-size="14" fill="#64748b">Kỳ tính: 2026-10-02</text>
+
+  
+
+  <!-- Divider between left and right -->
+  <line x1="468" y1="52" x2="468" y2="425" stroke="#cbd5e1" stroke-width="1.2"/>
+
+  <!-- Right Column Upper: Payment/COD -->
+  
+      <rect x="475" y="70" width="300" height="135" rx="6" fill="#ffffff" stroke="#000000" stroke-width="2.5"/>
+      <text x="490" y="98" font-family="Segoe UI, -apple-system, sans-serif" font-size="14" font-weight="bold" fill="#000">TIỀN THU HỘ (COD):</text>
+      <text x="625" y="142" text-anchor="middle" font-family="Segoe UI, -apple-system, sans-serif" font-size="30" font-weight="bold" fill="#000">75.000 đ</text>
+      <text x="625" y="180" text-anchor="middle" font-family="Segoe UI, -apple-system, sans-serif" font-size="11" font-style="italic" fill="#333">(Shipper thu đủ tiền khi giao hàng)</text>
+    
+
+  <!-- Right Column Lower: Items -->
+  <rect x="475" y="215" width="300" height="195" rx="6" fill="#f8fafc" stroke="#94a3b8" stroke-width="1"/>
+  <text x="490" y="240" font-family="Segoe UI, -apple-system, sans-serif" font-size="13" font-weight="bold" fill="#000">SẢN PHẨM IN:</text>
+  <line x1="475" y1="252" x2="775" y2="252" stroke="#e2e8f0" stroke-width="1"/>
+
+  
+      <text x="490" y="295" font-family="Segoe UI, -apple-system, sans-serif" font-size="14" font-weight="600" fill="#000">• Acceptance Photo (10x15)</text>
+      <text x="760" y="295" text-anchor="end" font-family="Segoe UI, -apple-system, sans-serif" font-size="14" font-weight="bold" fill="#000">x15</text>
+    
+
+  <!-- Bottom Quantity -->
+  <line x1="475" y1="365" x2="775" y2="365" stroke="#000000" stroke-width="1"/>
+  <text x="490" y="392" font-family="Segoe UI, -apple-system, sans-serif" font-size="15" font-weight="bold" fill="#000">Tổng SL: 15 sản phẩm</text>
+
+  <!-- Footer -->
+  <text x="28" y="445" font-family="Segoe UI, -apple-system, sans-serif" font-size="12" fill="#64748b">Lalab Auto Report · Tem bưu kiện nhiệt</text>
+</svg>

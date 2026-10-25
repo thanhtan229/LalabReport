@@ -1,0 +1,12 @@
+Total Quang Studio cached rows in DB: 33
+Files verified on disk: 33
+Max image dimension across all thumbnails: 200px (Requirement: <= 320px)
+PASS: All cached thumbnail files exist and are <= 320px.
+
+Total thumbnail log entries today: 25
+Sample log entries:
+   at LalabAutoReport.Infrastructure.Services.ThumbnailService.GenerateThumbnailCore(String sourcePath, String targetCachedPath) in D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\Services\ThumbnailService.cs:line 261
+   2026-10-25 16:06:48.972 +07:00 [WRN] Error decoding thumbnail for 'D:\___TOOLS\__TINIX\LalabReport\TEST_DATA_LALAB\2026-09-29\Quang Studio\15x21 in\photo_02.jpeg'
+   at LalabAutoReport.Infrastructure.Services.ThumbnailService.GenerateThumbnailCore(String sourcePath, String targetCachedPath) in D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\Services\ThumbnailService.cs:line 261
+   2026-10-25 16:06:52.103 +07:00 [WRN] Error decoding thumbnail for 'D:\___TOOLS\__TINIX\LalabReport\TEST_DATA_LALAB\2026-09-29\Quang Studio\15x21 in\photo_02.jpeg'
+   at LalabAutoReport.Infrastructure.Services.ThumbnailService.GenerateThumbnailCore(String sourcePath, String targetCachedPath) in D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\Services\ThumbnailService.cs:line 261

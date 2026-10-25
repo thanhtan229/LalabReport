@@ -1,0 +1,12 @@
+
+> lalab-cloud-worker@1.0.0 d1:local:migrate
+> wrangler d1 migrations apply lalab-db --local
+
+
+ G¢àn+Å wrangler 4.147.0 (update available 4.152.0)
+GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
+Resource location: local 
+
+Use --remote if you want to access the remote instance.
+
+G£à No migrations to apply!

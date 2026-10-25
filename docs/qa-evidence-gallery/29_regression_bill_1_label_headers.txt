@@ -1,0 +1,7 @@
+HTTP/1.1 200 OK
+Content-Length: 44279
+Content-Type: image/png
+Date: Sun, 25 Oct 2026 09:11:02 GMT
+Server: Kestrel
+Last-Modified: Sun, 25 Oct 2026 09:11:02 GMT
+
