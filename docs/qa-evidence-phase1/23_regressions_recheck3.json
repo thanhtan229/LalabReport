@@ -1,0 +1,60 @@
+{
+  "wal_safe_inventory": {
+    "exit_code": 0,
+    "wal_active": true,
+    "wal_size": 8272,
+    "customers_counted": 7,
+    "db_hash_during": "a11cd88fd353907cdadf6d37bfe700bd7debe20df526cd1e4a759a6f5adb500b",
+    "db_hash_after_run": "a11cd88fd353907cdadf6d37bfe700bd7debe20df526cd1e4a759a6f5adb500b",
+    "db_hash_after_close": "a11cd88fd353907cdadf6d37bfe700bd7debe20df526cd1e4a759a6f5adb500b",
+    "db_hash_unchanged": true,
+    "inventory_did_not_mutate_dir": true,
+    "dir_entries_after_close": [
+      "lalab_autoreport.db"
+    ],
+    "pass": true
+  },
+  "readiness_probe": {
+    "initial": {
+      "live": 200,
+      "ready": 200
+    },
+    "after_drop": {
+      "live": 200,
+      "ready": 503,
+      "body": {
+        "status": "NotReady",
+        "buildId": "2.0.0+e229d5cbae9a9556050c6332e4f42592de927c91+2.0.0",
+        "assemblyVersion": "2.0.0",
+        "schemaVersion": 0,
+        "startedAtUtc": "2026-10-25T12:49:38.5658974+00:00",
+        "cloud": "disabled",
+        "autoScan": "disabled",
+        "components": {
+          "mobileApi": "ready",
+          "database": "unavailable:sql_error_1"
+        }
+      }
+    },
+    "after_recreate": {
+      "live": 200,
+      "ready": 200
+    },
+    "pass": true
+  },
+  "write_gate_and_gallery": {
+    "note_mutation_status": 503,
+    "note_mutation_body": {
+      "code": "WRITES_DISABLED_UNTIL_PHASE2",
+      "message": "M\u00e1y ch\u1ee7 \u0111ang ch\u1ea1y \u1edf ch\u1ebf \u0111\u1ed9 ch\u1ec9 \u0111\u1ecdc LAN Phase 1. C\u00e1c thao t\u00e1c ghi b\u1ecb t\u1ea1m kh\u00f3a cho \u0111\u1ebfn Phase 2."
+    },
+    "gallery_requests_status": 200,
+    "gallery_touch_status": 200,
+    "loopback_only": true,
+    "tcp_listeners": "LocalAddress LocalPort    State OwningProcess\n------------ ---------    ----- -------------\n127.0.0.1         5213 TimeWait             0\n127.0.0.1         5213 TimeWait             0\n127.0.0.1         5213 TimeWait             0\n127.0.0.1         5213 TimeWait             0\n127.0.0.1         5213 TimeWait             0\n127.0.0.1         5213   Listen         85644\n127.0.0.1         5073 TimeWait             0\n127.0.0.1         5073 TimeWait             0\n127.0.0.1         5073 TimeWait             0\n127.0.0.1         5073   Listen         85644",
+    "test_suite_passed": 692,
+    "no_lingering_processes": true,
+    "live_db_untouched": true,
+    "pass": true
+  }
+}

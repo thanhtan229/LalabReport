@@ -1,0 +1,48 @@
+{
+  "api_status": {
+    "code": 200,
+    "body": {
+      "appName": "Lalab Auto Report",
+      "version": "2.0.0",
+      "workshopName": "X\u01af\u1edeNG IN \u1ea2NH LALAB",
+      "serverTime": "2026-10-25 18:14:51",
+      "cloudSyncEnabled": true,
+      "remoteUrl": "https://lalab.tinix.io.vn"
+    }
+  },
+  "login": {
+    "code": 200,
+    "role": "Staff",
+    "token_received": true
+  },
+  "orders": {
+    "code": 200,
+    "count": 17
+  },
+  "gallery_request": {
+    "code": 200,
+    "orderId": 7,
+    "totalImageCount": 33
+  },
+  "gallery_page": {
+    "code": 200,
+    "item_count": 24
+  },
+  "gallery_image": {
+    "code": 200,
+    "file_id": "785069ec3bf1e407",
+    "bytes": 2134,
+    "content_type": "image/jpeg"
+  },
+  "thumbnail": {
+    "code": 200,
+    "bytes": 2134,
+    "content_type": "image/jpeg"
+  },
+  "gallery_touch": {
+    "code": 200,
+    "body": {
+      "success": true
+    }
+  }
+}

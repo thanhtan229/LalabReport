@@ -1,0 +1,41 @@
+{
+  "ui_listener": {
+    "net_tcp_output": "LocalAddress LocalPort  State OwningProcess\n------------ ---------  ----- -------------\n0.0.0.0           5066 Listen         67372",
+    "binds_any_ip": true
+  },
+  "ui_api_status": {
+    "status_code": 200,
+    "body": {
+      "appName": "Lalab Auto Report",
+      "version": "2.0.0",
+      "workshopName": "X\u01af\u1edeNG IN \u1ea2NH LALAB",
+      "serverTime": "2026-10-25 18:15:23",
+      "cloudSyncEnabled": false,
+      "remoteUrl": "https://lalab.tinix.io.vn"
+    }
+  },
+  "ui_login": {
+    "status_code": 200,
+    "role": "Staff",
+    "token_received": true
+  },
+  "ui_gallery_page": {
+    "status_code": 200,
+    "item_count": 24
+  },
+  "ui_business_write": {
+    "endpoint": "POST /api/orders/2/note",
+    "status_code": 200,
+    "is_503": false,
+    "body": {
+      "id": 2,
+      "note": "Standalone Parity Verified Note",
+      "syncState": "confirmed"
+    }
+  },
+  "server_decoupling": {
+    "server_health_while_ui_running": 200,
+    "server_health_after_ui_stopped": 200,
+    "server_remained_up": true
+  }
+}

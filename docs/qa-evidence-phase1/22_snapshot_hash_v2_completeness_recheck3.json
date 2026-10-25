@@ -1,0 +1,89 @@
+{
+  "baseline_hash": "9b31fcd4f8d52d1b42664eeb4052b22027f02afb9252a49c43e681d22406a429",
+  "determinism_match": true,
+  "mutations": {
+    "bill_phone_snapshot": {
+      "sql": "UPDATE customer_bills SET phone_snapshot = '0988776655' WHERE id = 1;",
+      "rows_affected": 1,
+      "hash": "dcd93dd4db227b387ef33c4ef57c2d9100d2e42a7737aed6a4a2e41585987cf6",
+      "changed": true,
+      "pass": true
+    },
+    "bill_shipping_address_snapshot": {
+      "sql": "UPDATE customer_bills SET shipping_address_snapshot = '123 Hang Trong, Hanoi' WHERE id = 1;",
+      "rows_affected": 1,
+      "hash": "2778a1a866bc13b4eca072b7d487e984e9b5f1f0b4cfb893e2bc7ca6d623d333",
+      "changed": true,
+      "pass": true
+    },
+    "bill_export_file_path": {
+      "sql": "UPDATE customer_bills SET export_file_path = 'D:\\Exports\\bill_1_v2.pdf' WHERE id = 1;",
+      "rows_affected": 1,
+      "hash": "3d747acc07c05e9d071a2c21ec80889cf0ac77327219c6d4c813fa5679211119",
+      "changed": true,
+      "pass": true
+    },
+    "bill_note": {
+      "sql": "UPDATE customer_bills SET note = 'Updated bill note QA' WHERE id = 1;",
+      "rows_affected": 1,
+      "hash": "eef99c50004d02c7b65efce373ac382a6bc2ecd3dbf9a1659fe5c03157a82ab4",
+      "changed": true,
+      "pass": true
+    },
+    "line_note": {
+      "sql": "UPDATE customer_bill_lines SET note = 'Updated line note QA' WHERE id = (SELECT id FROM customer_bill_lines WHERE bill_id = 1 LIMIT 1);",
+      "rows_affected": 1,
+      "hash": "d0c7e7b2f347ccb7201b57505ac65437efa5e6a00f74b9a8d123c47d00333c8a",
+      "changed": true,
+      "pass": true
+    },
+    "line_quantity_override_reason": {
+      "sql": "UPDATE customer_bill_lines SET quantity_override_reason = 'Customer requested reprint' WHERE id = (SELECT id FROM customer_bill_lines WHERE bill_id = 1 LIMIT 1);",
+      "rows_affected": 1,
+      "hash": "2311bd4b35b679a27067b81c7f03ee1ba693deb71d3801fdde31226a7e479a53",
+      "changed": true,
+      "pass": true
+    },
+    "line_price_override_reason": {
+      "sql": "UPDATE customer_bill_lines SET price_override_reason = 'Special discount for studio' WHERE id = (SELECT id FROM customer_bill_lines WHERE bill_id = 1 LIMIT 1);",
+      "rows_affected": 1,
+      "hash": "3b7b803e4522e6e4ab5daf200c81b6317e7886b2864e8cad806d401b09aba1b1",
+      "changed": true,
+      "pass": true
+    },
+    "line_final_print_folder_path": {
+      "sql": "UPDATE customer_bill_lines SET final_print_folder_path = '2026-09-29\\Quang Studio\\15x21\\v2' WHERE id = (SELECT id FROM customer_bill_lines WHERE bill_id = 1 LIMIT 1);",
+      "rows_affected": 1,
+      "hash": "b5d8c4b6c9f8cea479ee6b2772449bc54bd91fc8be7056c7d1e941faaf212614",
+      "changed": true,
+      "pass": true
+    },
+    "line_specification_folder_name": {
+      "sql": "UPDATE customer_bill_lines SET specification_folder_name = '15x21 VIP' WHERE id = (SELECT id FROM customer_bill_lines WHERE bill_id = 1 LIMIT 1);",
+      "rows_affected": 1,
+      "hash": "29a8fdea2ea9c28be7d0b0bf77c0721db2d76be597885dfd288cf4c1ae6198e2",
+      "changed": true,
+      "pass": true
+    },
+    "line_issue_message": {
+      "sql": "UPDATE customer_bill_lines SET issue_message = 'Manual quality override' WHERE id = (SELECT id FROM customer_bill_lines WHERE bill_id = 1 LIMIT 1);",
+      "rows_affected": 1,
+      "hash": "a9be1e7ae7ceb0f5304a5701362acc6481cf2a7246fbff01aa02e8d364250d61",
+      "changed": true,
+      "pass": true
+    },
+    "adjustment_note": {
+      "sql": "UPDATE customer_bill_adjustments SET note = 'Loyalty coupon discount' WHERE id = (SELECT id FROM customer_bill_adjustments WHERE bill_id = 1 LIMIT 1);",
+      "rows_affected": 1,
+      "hash": "1c6f95c5076ad02885a0085d0e48d0585b28d446cd3b0f0d73aaa03e390b52b3",
+      "changed": true,
+      "pass": true
+    }
+  },
+  "draft_note_mutation": {
+    "rows_affected": 1,
+    "hash": "9b31fcd4f8d52d1b42664eeb4052b22027f02afb9252a49c43e681d22406a429",
+    "unchanged": true,
+    "pass": true
+  }
+}

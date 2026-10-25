@@ -1,0 +1,12 @@
+{
+  "verdict": "PASS",
+  "baseline_hash_1": "a3f818fc81f0912459181f16dea0a7f3c67049271a79e5fad2926440ce26da70",
+  "baseline_hash_2": "a3f818fc81f0912459181f16dea0a7f3c67049271a79e5fad2926440ce26da70",
+  "identical_match": true,
+  "draft_note_modified_hash": "a3f818fc81f0912459181f16dea0a7f3c67049271a79e5fad2926440ce26da70",
+  "draft_note_leaves_hash_unchanged": true,
+  "locked_customer_name_modified_hash": "c0c0928926cf03e53fcd13624f7b0f25e8d5a9f5be014ce43971c078421b0110",
+  "locked_customer_name_changes_hash": true,
+  "locked_billed_quantity_modified_hash": "11c04589ab8c1ca5059842bdce68188d220494191a07d8041271154d2b094911",
+  "locked_billed_quantity_changes_hash": true
+}

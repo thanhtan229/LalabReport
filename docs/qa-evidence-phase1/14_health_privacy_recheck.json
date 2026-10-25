@@ -1,0 +1,30 @@
+{
+  "verdict": "PASS",
+  "datadir_present": false,
+  "forbidden_path_leaks": [],
+  "secret_fields_leaks": [],
+  "live_payload": {
+    "status": "Live",
+    "buildId": "2.0.0+fdb4d7fe126ecbbcf845023cd63be8e5886809f8+2.0.0",
+    "assemblyVersion": "2.0.0",
+    "schemaVersion": 24,
+    "startedAtUtc": "2026-10-25T11:46:24.3859055+00:00",
+    "cloud": "disabled",
+    "autoScan": "disabled"
+  },
+  "ready_payload": {
+    "status": "Ready",
+    "buildId": "2.0.0+fdb4d7fe126ecbbcf845023cd63be8e5886809f8+2.0.0",
+    "assemblyVersion": "2.0.0",
+    "schemaVersion": 24,
+    "startedAtUtc": "2026-10-25T11:46:24.3859055+00:00",
+    "cloud": "disabled",
+    "autoScan": "disabled",
+    "components": {
+      "database": "ready",
+      "mobileApi": "ready"
+    }
+  },
+  "build_id": "2.0.0+fdb4d7fe126ecbbcf845023cd63be8e5886809f8+2.0.0",
+  "build_id_contains_head_sha": true
+}

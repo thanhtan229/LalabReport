@@ -1,0 +1,129 @@
+=== LALAB AUTO REPORT SERVER - LOG HYGIENE AUDIT ===
+Total log files audited: 7
+Total log lines audited: 115
+
+--- AUDITED LOG FILES ---
+ - C:\Users\Admin\AppData\Local\Temp\lalab_qa_step_b\logs\lalab-20261025.log (1586 bytes)
+ - C:\Users\Admin\AppData\Local\Temp\lalab_qa_step_b\logs\lalab-20261025_001.log (2203 bytes)
+ - C:\Users\Admin\AppData\Local\Temp\lalab_qa_server_parity\logs\lalab-20261025.log (1621 bytes)
+ - C:\Users\Admin\AppData\Local\Temp\lalab_qa_headless_server\logs\lalab-20261025.log (1631 bytes)
+ - C:\Users\Admin\AppData\Local\Temp\lalab_qa_render_spike_data\logs\lalab-20261025.log (3848 bytes)
+ - C:\Users\Admin\AppData\Local\Temp\lalab_qa_inventory\logs\lalab-20261025.log (3128 bytes)
+ - C:\Users\Admin\AppData\Local\Temp\lalab_qa_inventory\logs\lalab-20261025_001.log (623 bytes)
+
+--- SENSITIVE DATA SCAN RESULTS ---
+Admin PIN ('123456') leaks: 0
+Staff PIN ('000000') leaks: 0
+Mobile Auth Secret leaks: 0
+JWT Token leaks: 0
+Total Critical Leaks: 0
+
+No sensitive secrets, PINs, or raw JWT tokens were detected in any of the server logs.
+
+--- LOGGED CONTENT SAMPLE & EVENT TYPES OBSERVED ---
+
+[Sample from lalab_qa_step_b\lalab-20261025.log]:
+  2026-10-25 18:14:48.995 +07:00 [INF] Lalab Auto Report logging initialized. Log directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_step_b\logs
+  2026-10-25 18:14:49.017 +07:00 [INF] === Khởi động Lalab Auto Report Server ===
+  2026-10-25 18:14:49.017 +07:00 [INF] Data Directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_step_b
+  2026-10-25 18:14:49.017 +07:00 [INF] Health Port: 5205
+  2026-10-25 18:14:49.019 +07:00 [INF] Đã chiếm quyền ServerInstanceGuard thành công.
+  2026-10-25 18:14:49.058 +07:00 [INF] Cơ sở dữ liệu đã tồn tại tại 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_step_b\lalab_autoreport.db'. Đang tạo bản sao lưu an toàn trước khi migrate...
+  2026-10-25 18:14:49.065 +07:00 [INF] Creating SQLite database backup to 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_step_b\backups\lalab_backup_20261025_111449.db'
+  2026-10-25 18:14:49.127 +07:00 [INF] Database backup successfully created. Size: 884736 bytes
+  2026-10-25 18:14:49.128 +07:00 [INF] Sao lưu trước migrate thành công: 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_step_b\backups\lalab_backup_20261025_111449.db'. Tiến hành migrate schema...
+  2026-10-25 18:14:49.134 +07:00 [INF] Migrate cơ sở dữ liệu hoàn tất thành công.
+  2026-10-25 18:14:49.219 +07:00 [INF] Mobile Web Server started on port 5065. LAN URL: http://127.0.0.1:5065
+  2026-10-25 18:14:49.219 +07:00 [INF] Mobile Web Server (Read-Only Loopback) đã khởi động: http://127.0.0.1:5065
+  2026-10-25 18:14:49.241 +07:00 [INF] Health endpoints đang lắng nghe tại http://127.0.0.1:5205
+
+[Sample from lalab_qa_step_b\lalab-20261025_001.log]:
+  2026-10-25 18:14:52.039 +07:00 [INF] Lalab Auto Report logging initialized. Log directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_step_b\logs
+  2026-10-25 18:14:52.068 +07:00 [INF] === Khởi động Lalab Auto Report Server ===
+  2026-10-25 18:14:52.069 +07:00 [INF] Data Directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_step_b
+  2026-10-25 18:14:52.069 +07:00 [INF] Health Port: 5207
+  2026-10-25 18:14:52.071 +07:00 [ERR] [LỖI KHỞI ĐỘNG] Không thể chiếm quyền khởi động server: Named mutex 'Global\LalabAutoReport.Server' đang được nắm giữ bởi một tiến trình server khác.
+  2026-10-25 18:14:53.470 +07:00 [INF] Lalab Auto Report logging initialized. Log directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_step_b\logs
+  2026-10-25 18:14:53.495 +07:00 [INF] === Khởi động Lalab Auto Report Server ===
+  2026-10-25 18:14:53.495 +07:00 [INF] Data Directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_step_b
+  2026-10-25 18:14:53.495 +07:00 [INF] Health Port: 5205
+  2026-10-25 18:14:53.497 +07:00 [INF] Đã chiếm quyền ServerInstanceGuard thành công.
+  2026-10-25 18:14:53.539 +07:00 [INF] Cơ sở dữ liệu đã tồn tại tại 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_step_b\lalab_autoreport.db'. Đang tạo bản sao lưu an toàn trước khi migrate...
+  2026-10-25 18:14:53.545 +07:00 [INF] Creating SQLite database backup to 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_step_b\backups\lalab_backup_20261025_111453.db'
+  2026-10-25 18:14:53.613 +07:00 [INF] Database backup successfully created. Size: 884736 bytes
+  2026-10-25 18:14:53.614 +07:00 [INF] Sao lưu trước migrate thành công: 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_step_b\backups\lalab_backup_20261025_111453.db'. Tiến hành migrate schema...
+  2026-10-25 18:14:53.620 +07:00 [INF] Migrate cơ sở dữ liệu hoàn tất thành công.
+
+[Sample from lalab_qa_server_parity\lalab-20261025.log]:
+  2026-10-25 18:15:17.046 +07:00 [INF] Lalab Auto Report logging initialized. Log directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_server_parity\logs
+  2026-10-25 18:15:17.067 +07:00 [INF] === Khởi động Lalab Auto Report Server ===
+  2026-10-25 18:15:17.068 +07:00 [INF] Data Directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_server_parity
+  2026-10-25 18:15:17.068 +07:00 [INF] Health Port: 5205
+  2026-10-25 18:15:17.070 +07:00 [INF] Đã chiếm quyền ServerInstanceGuard thành công.
+  2026-10-25 18:15:17.122 +07:00 [INF] Cơ sở dữ liệu đã tồn tại tại 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_server_parity\lalab_autoreport.db'. Đang tạo bản sao lưu an toàn trước khi migrate...
+  2026-10-25 18:15:17.128 +07:00 [INF] Creating SQLite database backup to 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_server_parity\backups\lalab_backup_20261025_111517.db'
+  2026-10-25 18:15:17.204 +07:00 [INF] Database backup successfully created. Size: 884736 bytes
+  2026-10-25 18:15:17.205 +07:00 [INF] Sao lưu trước migrate thành công: 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_server_parity\backups\lalab_backup_20261025_111517.db'. Tiến hành migrate schema...
+  2026-10-25 18:15:17.212 +07:00 [INF] Migrate cơ sở dữ liệu hoàn tất thành công.
+  2026-10-25 18:15:17.293 +07:00 [INF] Mobile Web Server started on port 5065. LAN URL: http://127.0.0.1:5065
+  2026-10-25 18:15:17.293 +07:00 [INF] Mobile Web Server (Read-Only Loopback) đã khởi động: http://127.0.0.1:5065
+  2026-10-25 18:15:17.317 +07:00 [INF] Health endpoints đang lắng nghe tại http://127.0.0.1:5205
+
+[Sample from lalab_qa_headless_server\lalab-20261025.log]:
+  2026-10-25 18:15:49.879 +07:00 [INF] Lalab Auto Report logging initialized. Log directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_headless_server\logs
+  2026-10-25 18:15:49.907 +07:00 [INF] === Khởi động Lalab Auto Report Server ===
+  2026-10-25 18:15:49.907 +07:00 [INF] Data Directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_headless_server
+  2026-10-25 18:15:49.907 +07:00 [INF] Health Port: 5205
+  2026-10-25 18:15:49.909 +07:00 [INF] Đã chiếm quyền ServerInstanceGuard thành công.
+  2026-10-25 18:15:49.970 +07:00 [INF] Cơ sở dữ liệu đã tồn tại tại 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_headless_server\lalab_autoreport.db'. Đang tạo bản sao lưu an toàn trước khi migrate...
+  2026-10-25 18:15:49.976 +07:00 [INF] Creating SQLite database backup to 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_headless_server\backups\lalab_backup_20261025_111549.db'
+  2026-10-25 18:15:50.049 +07:00 [INF] Database backup successfully created. Size: 884736 bytes
+  2026-10-25 18:15:50.050 +07:00 [INF] Sao lưu trước migrate thành công: 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_headless_server\backups\lalab_backup_20261025_111549.db'. Tiến hành migrate schema...
+  2026-10-25 18:15:50.056 +07:00 [INF] Migrate cơ sở dữ liệu hoàn tất thành công.
+  2026-10-25 18:15:50.136 +07:00 [INF] Mobile Web Server started on port 5065. LAN URL: http://127.0.0.1:5065
+  2026-10-25 18:15:50.136 +07:00 [INF] Mobile Web Server (Read-Only Loopback) đã khởi động: http://127.0.0.1:5065
+  2026-10-25 18:15:50.157 +07:00 [INF] Health endpoints đang lắng nghe tại http://127.0.0.1:5205
+
+[Sample from lalab_qa_render_spike_data\lalab-20261025.log]:
+  2026-10-25 18:16:05.861 +07:00 [INF] Lalab Auto Report logging initialized. Log directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_render_spike_data\logs
+  2026-10-25 18:16:05.882 +07:00 [INF] === Khởi động Lalab Auto Report Server ===
+  2026-10-25 18:16:05.882 +07:00 [INF] Data Directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_render_spike_data
+  2026-10-25 18:16:05.883 +07:00 [INF] Health Port: 5099
+  2026-10-25 18:16:05.885 +07:00 [INF] Đã chiếm quyền ServerInstanceGuard thành công.
+  2026-10-25 18:16:05.921 +07:00 [INF] Cơ sở dữ liệu đã tồn tại tại 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_render_spike_data\lalab_autoreport.db'. Đang tạo bản sao lưu an toàn trước khi migrate...
+  2026-10-25 18:16:05.926 +07:00 [INF] Creating SQLite database backup to 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_render_spike_data\backups\lalab_backup_20261025_111605.db'
+  2026-10-25 18:16:06.008 +07:00 [INF] Database backup successfully created. Size: 884736 bytes
+  2026-10-25 18:16:06.008 +07:00 [INF] Sao lưu trước migrate thành công: 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_render_spike_data\backups\lalab_backup_20261025_111605.db'. Tiến hành migrate schema...
+  2026-10-25 18:16:06.014 +07:00 [INF] Migrate cơ sở dữ liệu hoàn tất thành công.
+  2026-10-25 18:16:06.014 +07:00 [INF] Thực thi render-spike cho Bill ID 1, thư mục xuất: C:\Users\Admin\AppData\Local\Temp\lalab_qa_render_out1
+  2026-10-25 18:16:06.637 +07:00 [INF] Successfully exported bill BILL-20260929-0001 to JPEG: C:\Users\Admin\AppData\Local\Temp\lalab_qa_render_out1\BILL-20260929-0001_Van-An.jpg
+  2026-10-25 18:16:06.662 +07:00 [INF] Exported thermal shipping label for bill BILL-20260929-0001 to C:\Users\Admin\AppData\Local\Temp\lalab_qa_render_out1\Label_BILL-20260929-0001_Văn_An.png
+  2026-10-25 18:16:06.716 +07:00 [INF] Hoàn tất render-spike thành công cho Bill ID 1.
+  2026-10-25 18:16:06.852 +07:00 [INF] Lalab Auto Report logging initialized. Log directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_render_spike_data\logs
+
+[Sample from lalab_qa_inventory\lalab-20261025.log]:
+  2026-10-25 18:16:31.129 +07:00 [INF] Lalab Auto Report logging initialized. Log directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_inventory\logs
+  2026-10-25 18:16:31.152 +07:00 [INF] === Khởi động Lalab Auto Report Server ===
+  2026-10-25 18:16:31.153 +07:00 [INF] Data Directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_inventory
+  2026-10-25 18:16:31.153 +07:00 [INF] Health Port: 5099
+  2026-10-25 18:16:31.155 +07:00 [INF] Đã chiếm quyền ServerInstanceGuard thành công.
+  2026-10-25 18:16:31.192 +07:00 [INF] Cơ sở dữ liệu đã tồn tại tại 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_inventory\lalab_autoreport.db'. Đang tạo bản sao lưu an toàn trước khi migrate...
+  2026-10-25 18:16:31.198 +07:00 [INF] Creating SQLite database backup to 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_inventory\backups\lalab_backup_20261025_111631.db'
+  2026-10-25 18:16:31.260 +07:00 [INF] Database backup successfully created. Size: 884736 bytes
+  2026-10-25 18:16:31.261 +07:00 [INF] Sao lưu trước migrate thành công: 'C:\Users\Admin\AppData\Local\Temp\lalab_qa_inventory\backups\lalab_backup_20261025_111631.db'. Tiến hành migrate schema...
+  2026-10-25 18:16:31.269 +07:00 [INF] Migrate cơ sở dữ liệu hoàn tất thành công.
+  2026-10-25 18:16:31.269 +07:00 [INF] Thực thi lệnh kiểm kê dry-run trên cơ sở dữ liệu: C:\Users\Admin\AppData\Local\Temp\lalab_qa_inventory\lalab_autoreport.db
+  2026-10-25 18:16:31.309 +07:00 [INF] Hoàn tất kiểm kê inventory dry-run.
+  2026-10-25 18:16:31.435 +07:00 [INF] Lalab Auto Report logging initialized. Log directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_inventory\logs
+  2026-10-25 18:16:31.457 +07:00 [INF] === Khởi động Lalab Auto Report Server ===
+  2026-10-25 18:16:31.457 +07:00 [INF] Data Directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_inventory
+
+[Sample from lalab_qa_inventory\lalab-20261025_001.log]:
+  2026-10-25 18:16:33.435 +07:00 [INF] Lalab Auto Report logging initialized. Log directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_inventory\logs
+  2026-10-25 18:16:33.460 +07:00 [INF] === Khởi động Lalab Auto Report Server ===
+  2026-10-25 18:16:33.460 +07:00 [INF] Data Directory: C:\Users\Admin\AppData\Local\Temp\lalab_qa_inventory
+  2026-10-25 18:16:33.460 +07:00 [INF] Health Port: 5099
+  2026-10-25 18:16:33.462 +07:00 [ERR] [LỖI KHỞI ĐỘNG] Không thể chiếm quyền khởi động server: Named mutex 'Global\LalabAutoReport.Server' đang được nắm giữ bởi một tiến trình server khác.
+
+--- LOG HYGIENE VERDICT ---
+PASS - Logging is structured, minimal, and does not leak credentials, PINs, or secrets.

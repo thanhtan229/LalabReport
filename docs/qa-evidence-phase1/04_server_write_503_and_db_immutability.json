@@ -1,0 +1,75 @@
+{
+  "tests": {
+    "orders_2_note": {
+      "code": 503,
+      "body": {
+        "code": "WRITES_DISABLED_UNTIL_PHASE2",
+        "message": "M\u00e1y ch\u1ee7 \u0111ang ch\u1ea1y \u1edf ch\u1ebf \u0111\u1ed9 ch\u1ec9 \u0111\u1ecdc LAN Phase 1. C\u00e1c thao t\u00e1c ghi b\u1ecb t\u1ea1m kh\u00f3a cho \u0111\u1ebfn Phase 2."
+      }
+    },
+    "orders_2_toggle_delivered": {
+      "code": 503,
+      "body": {
+        "code": "WRITES_DISABLED_UNTIL_PHASE2",
+        "message": "M\u00e1y ch\u1ee7 \u0111ang ch\u1ea1y \u1edf ch\u1ebf \u0111\u1ed9 ch\u1ec9 \u0111\u1ecdc LAN Phase 1. C\u00e1c thao t\u00e1c ghi b\u1ecb t\u1ea1m kh\u00f3a cho \u0111\u1ebfn Phase 2."
+      }
+    },
+    "orders_2_toggle_printed": {
+      "code": 503,
+      "body": {
+        "code": "WRITES_DISABLED_UNTIL_PHASE2",
+        "message": "M\u00e1y ch\u1ee7 \u0111ang ch\u1ea1y \u1edf ch\u1ebf \u0111\u1ed9 ch\u1ec9 \u0111\u1ecdc LAN Phase 1. C\u00e1c thao t\u00e1c ghi b\u1ecb t\u1ea1m kh\u00f3a cho \u0111\u1ebfn Phase 2."
+      }
+    },
+    "bills_1_toggle_payment": {
+      "code": 503,
+      "body": {
+        "code": "WRITES_DISABLED_UNTIL_PHASE2",
+        "message": "M\u00e1y ch\u1ee7 \u0111ang ch\u1ea1y \u1edf ch\u1ebf \u0111\u1ed9 ch\u1ec9 \u0111\u1ecdc LAN Phase 1. C\u00e1c thao t\u00e1c ghi b\u1ecb t\u1ea1m kh\u00f3a cho \u0111\u1ebfn Phase 2."
+      }
+    },
+    "bills_1_print": {
+      "code": 503,
+      "body": {
+        "code": "WRITES_DISABLED_UNTIL_PHASE2",
+        "message": "M\u00e1y ch\u1ee7 \u0111ang ch\u1ea1y \u1edf ch\u1ebf \u0111\u1ed9 ch\u1ec9 \u0111\u1ecdc LAN Phase 1. C\u00e1c thao t\u00e1c ghi b\u1ecb t\u1ea1m kh\u00f3a cho \u0111\u1ebfn Phase 2."
+      }
+    }
+  },
+  "db_verification": {
+    "order_2_before": {
+      "id": 2,
+      "note": "Test cloud",
+      "is_delivered": 1,
+      "delivered_at": "2026-10-05T08:33:18.723Z",
+      "is_printed": 1,
+      "printed_at": "2026-10-02T01:39:21.4512146+07:00",
+      "updated_at": "2026-10-05T08:47:36.0883985+00:00"
+    },
+    "order_2_after": {
+      "id": 2,
+      "note": "Test cloud",
+      "is_delivered": 1,
+      "delivered_at": "2026-10-05T08:33:18.723Z",
+      "is_printed": 1,
+      "printed_at": "2026-10-02T01:39:21.4512146+07:00",
+      "updated_at": "2026-10-05T08:47:36.0883985+00:00"
+    },
+    "order_2_unchanged": true,
+    "bill_1_before": {
+      "id": 1,
+      "status": "Locked",
+      "is_paid": 0,
+      "paid_at": null,
+      "updated_at": "2026-09-29T06:06:14.6510280+00:00"
+    },
+    "bill_1_after": {
+      "id": 1,
+      "status": "Locked",
+      "is_paid": 0,
+      "paid_at": null,
+      "updated_at": "2026-09-29T06:06:14.6510280+00:00"
+    },
+    "bill_1_unchanged": true
+  }
+}

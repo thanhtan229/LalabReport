@@ -1,0 +1,12 @@
+{
+  "verdict": "PASS",
+  "loopback_only": true,
+  "tcp_listeners": "LocalAddress LocalPort  State OwningProcess\n------------ ---------  ----- -------------\n127.0.0.1         5225 Listen         83524\n127.0.0.1         5085 Listen         83524",
+  "gallery_request_status": 200,
+  "gallery_touch_status": 200,
+  "order_note_write_status": 503,
+  "order_note_write_body": {
+    "code": "WRITES_DISABLED_UNTIL_PHASE2",
+    "message": "M\u00e1y ch\u1ee7 \u0111ang ch\u1ea1y \u1edf ch\u1ebf \u0111\u1ed9 ch\u1ec9 \u0111\u1ecdc LAN Phase 1. C\u00e1c thao t\u00e1c ghi b\u1ecb t\u1ea1m kh\u00f3a cho \u0111\u1ebfn Phase 2."
+  }
+}

@@ -243,3 +243,16 @@ Gate (plan §12, Phase 1):
 - Mỗi máy một DB đồng bộ qua Cloud: tạo merge tiền tệ, trái non-goal offline.
 - Remote repository API theo từng query: round trip nhiều, mất ranh giới transaction.
 - Chuyển hẳn sang server DB (PostgreSQL): chưa cần ở quy mô đề xuất, chi phí migration lớn.
+
+
+---
+
+## 5. Phase 1 gate result (25/10/2026)
+
+- Code: commits `08f1b3f` (shared composition root + transport moved to Infrastructure), `e29b3ae` (Server host skeleton), `739ea1e` (read-only loopback mobile API), `425bf86` (renderer spike + headless guard), `fdb4d7f`, `6513edf`, `e229d5c` (review fixes: non-mutating/WAL-safe inventory, dynamic readiness, schema contract, snapshot hash v2).
+- Validation: 692 automated tests passed; builds 0 warnings/0 errors.
+- Independent QA: PASS (gate lines 2–6; Session 0 service install NOT VERIFIED). Evidence: `docs/qa-evidence-phase1/`.
+- Code Reviewer: LGTM (`5960bfa..425bf86`), fixes re-reviewed.
+- Final Reviewer: **FINAL PASS** at `e229d5c` (0 blocking findings, 2 non-blocking contract deviations recorded in `docs/phase1-inventory-contract.md` §8).
+- Accepted limitations: Windows Service Session 0 execution/rendering not exercised; Cloud/AutoScan disabled in server profile; business writes return 503 `WRITES_DISABLED_UNTIL_PHASE2`; standalone desktop keeps its own LocalAppData DB until the Phase 3 client.
+- Phase 2 must address first: revocable sessions/capabilities with hashed PINs; desired-state commands with revisions and idempotency receipts; shared mutation handlers with atomic bill-job claims, audit/outbox and concurrency tests before enabling writes.

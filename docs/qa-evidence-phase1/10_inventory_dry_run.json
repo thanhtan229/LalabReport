@@ -1,0 +1,31 @@
+{
+  "dry_run_standalone": {
+    "command": "LalabAutoReport.Server.exe inventory --dry-run --data-dir \"C:\\Users\\Admin\\AppData\\Local\\Temp\\lalab_qa_inventory\"",
+    "exit_code": 0,
+    "report": {
+      "orders": 20,
+      "order_items": 1243,
+      "bills": 12,
+      "locked_bills": 21,
+      "customer_bills": 36,
+      "cloud_sync_queue_pending": 0,
+      "cloud_operational_outbox_pending": 0,
+      "cloud_print_command_ledger_unacked": 0,
+      "root_folders": 2,
+      "schema_migrations_max_version": 24
+    },
+    "db_sha256_before": "2584ff5a3de457809e7ec97bc865978ab3249d6f875ed7cdc0b2716e712b9e75",
+    "db_sha256_after": "2584ff5a3de457809e7ec97bc865978ab3249d6f875ed7cdc0b2716e712b9e75",
+    "db_hash_unchanged": true,
+    "wal_file_present": true,
+    "shm_file_present": true
+  },
+  "dry_run_while_server_running": {
+    "command": "LalabAutoReport.Server.exe inventory --dry-run --data-dir \"C:\\Users\\Admin\\AppData\\Local\\Temp\\lalab_qa_inventory\"",
+    "exit_code": 3,
+    "expected_exit_code": 3,
+    "stdout": "",
+    "stderr": "[L?I KH?I D?NG] Kh\ufffdng th? chi?m quy?n kh?i d?ng server: Named mutex 'Global\\LalabAutoReport.Server' dang du?c n?m gi? b?i m?t ti?n tr\ufffdnh server kh\ufffdc.",
+    "behavior": "Rejected with exit code 3 because ServerInstanceGuard detects mutex/server.lock already held by the running server."
+  }
+}

@@ -1,0 +1,9 @@
+Initial server PID: 17540
+Lock file before kill: True
+Lock file remains on disk after hard kill: True
+Restarted server PID: 58828
+Restarted server ready: True
+Restarted server /health/live: 200
+Restarted server /health/ready: 200
+Restarted server ready payload:
+{"status":"Ready","buildId":"2.0.0+425bf865fc75a3fbb1ef582c158324109dd25a3e+2.0.0","assemblyVersion":"2.0.0","schemaVersion":24,"dataDir":"C:\\Users\\Admin\\AppData\\Local\\Temp\\lalab_qa_step_b","startedAtUtc":"2026-10-25T11:14:53.6959067+00:00","cloud":"disabled","autoScan":"disabled"}

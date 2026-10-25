@@ -31,7 +31,7 @@ The subcommand `inventory --dry-run` produces an authoritative, immutable read-o
 | Exit Code | Classification | Condition | Standard Output (`stdout`) | Standard Error (`stderr`) |
 | :--- | :--- | :--- | :--- | :--- |
 | **0** | Success | Snapshot extracted and verified successfully | Full indented JSON report | Empty |
-| **1** | Integrity Violation | Source DB hash or directory listing/mtime modified, or unhandled exception | Empty | Diagnostic error message |
+| **1** | Integrity Violation | Source DB hash or directory listing/mtime modified, or unhandled exception | **May contain the JSON emitted before the post-check** — consumers MUST check the exit code and ignore stdout when non-zero | Diagnostic error message |
 | **2** | CLI Parse Error | Invalid or unrecognized arguments (e.g. unknown options) | Usage help | Diagnostic error message |
 | **7** | Source DB Not Found | `<data-dir>\lalab_autoreport.db` does not exist (directory not created) | Empty | Diagnostic error message |
 | **8** | Schema / Query Error | Missing required table, missing required column, or SQL query failure | **EMPTY (No JSON)** | Diagnostic error message |
@@ -62,7 +62,7 @@ Prior to executing any aggregation or snapshot hashing queries, the database sch
 | `customer_bill_lines` | V23/V24 | **Required** | Exit 8, stdout empty |
 | `customer_bill_adjustments` | V23/V24 | **Required** | Exit 8, stdout empty |
 | `bills` | Legacy V1 | **Optional** | Exit 0; reported as 0 if `customer_bills` exists |
-| `bill_lines` | Legacy V1 | **Optional** | Exit 0 |
+| `bill_lines` | Legacy V1 | **Conditional** | Optional only when no locked legacy `bills` rows exist; if locked legacy bills exist and `bill_lines` is missing, exit 8, stdout empty |
 | `cloud_sync_state` | Cloud | **Optional** | Exit 0; reported as `null` when missing |
 | `cloud_sync_queue` | Cloud | **Optional** | Exit 0; reported as `null` when missing |
 | `cloud_operational_outbox` | Cloud | **Optional** | Exit 0; reported as `null` when missing |
@@ -178,3 +178,13 @@ Locked bills are queried with `WHERE status IN ('Locked', 'Exported') ORDER BY i
 | `customer_bills.created_at` | Purely operational database timestamp recording row creation time. Does not alter billing calculation, quantities, legal customer terms, or snapshot provenance. |
 | `customer_bills.updated_at` | Purely operational database timestamp recording row update time. Does not alter business snapshot meaning. |
 | Live mutable tables (`orders`, `order_item_scans`) | Direct joins to live operational tables are intentionally prohibited. Locked bills must reflect strictly persisted frozen snapshot columns. |
+
+
+---
+
+## 8. Known Non-Blocking Deviations (accepted at Phase 1 gate)
+
+These were reported by the Final Reviewer as non-blocking at commit `e229d5c`:
+
+1. **Exit code 1 may have already-emitted JSON on stdout.** The report is written before the post-run source-integrity verification. Automation MUST treat any non-zero exit code as failure and ignore stdout. Fixing the ordering is scheduled for Phase 2 (or any inventory touch), together with a regression test.
+2. **`bill_lines` is conditionally optional.** It may be absent only while there are no locked legacy `bills` rows. If locked legacy bills exist, the legacy snapshot hash requires `bill_lines` and absence fails with exit 8 (documented in the table above).

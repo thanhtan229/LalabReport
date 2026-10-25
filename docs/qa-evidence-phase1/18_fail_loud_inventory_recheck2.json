@@ -1,0 +1,12 @@
+{
+  "verdict": "PASS",
+  "corrupted_required_column": {
+    "exit_code": 8,
+    "stdout_empty": true,
+    "stderr": "[L\u1ed6I INVENTORY] L\u1ed7i truy v\u1ea5n ho\u1eb7c l\u01b0\u1ee3c \u0111\u1ed3 c\u01a1 s\u1edf d\u1eef li\u1ec7u kh\u00f4ng h\u1ee3p l\u1ec7: SQLite Error 1: 'no such column: grand_total'."
+  },
+  "dropped_optional_table": {
+    "exit_code": 0,
+    "cloud_operational_outbox_pending": null
+  }
+}

@@ -1,50 +1,60 @@
 # Agent Progress — Lalab Auto Report
 
-Cập nhật: 25/10/2026. Tài liệu này chỉ là bản ghi bàn giao ngắn; Git + test evidence là nguồn sự thật.
+Cập nhật: 25/10/2026. Bản ghi bàn giao ngắn; Git + test evidence là nguồn sự thật.
 
 ## Current milestone
 
-- **Gallery v2.1: ĐÃ COMMIT** (`9f3bfba`, branch `master`, chưa push).
-- **LAN Server Workstations: Phase 0 (thiết kế) hoàn tất**, chưa triển khai code.
+- **Gallery v2.1: đã commit** (code `9f3bfba`, docs `5960bfa`).
+- **LAN Phase 1 (server host, read-only LAN, inventory/renderer spike): FINAL PASS** tại `e229d5c`. Chưa push, chưa cài Windows Service, chưa deploy.
 
 ## Completed work
 
-- Order Thumbnail Gallery cho PC (WPF), LAN PWA và Cloud PWA/Worker: manifest theo thư mục in đã resolve, file id opaque ổn định, phân trang 24, thumbnail 320px cache + last-used, retention 30/60/90 + dọn tay (local + cloud).
-- WPF: cửa sổ bitmap bounded theo viewport, 2 decode worker, prefetch 1 màn hình (tối đa 12), unload ngoài 2 màn hình, hủy khi đóng/refresh, retry từng ảnh, mở file gốc/thư mục có kiểm tra path traversal + reparse point.
-- LAN: API gallery + SPA 3 cột, `AbortController` khi đóng modal, chống response cũ, lazy image, trạng thái lỗi/retry, observer touch đúng order.
-- Cloud: job queue claim/status, manifest TTL 24h, upload R2, D1 media theo `(file_id, version)`, clamp limit 1..50, fallback version khi ảnh cũ, R2-404 self-heal + retry UI, cleanup admin-only.
-- Retention/cleanup: settings UI 30/60/90/tắt/dọn-ngay/xóa-tất-cả; dọn tay cập nhật `LastThumbnailCleanupAt` và gọi cloud cleanup qua `ICloudSyncService`.
-- Thermal label 40x100 (mặc định) / 75x100 + địa chỉ/điện thoại/ghi chú trong cloud bill DTO và SVG label; reopen hóa đơn khóa giữ lý do + xác nhận.
-- Tests: .NET 640 pass; worker 94 pass; `tsc` sạch. QA runtime PASS (trừ WPF trực quan).
+- Gallery PC/LAN/Cloud + retention + thermal labels (xem mục trước trong Git history/QA evidence).
+- LAN Phase 1:
+  - Shared composition root `AddLalabCore(options)`; desktop standalone giữ nguyên hành vi; Kestrel/SPA chuyển sang Infrastructure.
+  - `LalabAutoReport.Server` (console/Windows Service-ready): `--data-dir` (mặc định `%ProgramData%\LalabAutoReport\Server`), Global mutex + `server.lock`, backup fail-closed trước migrate, migration V24 `server_identity`, health live/ready loopback với BuildId.
+  - Mobile API re-host loopback-only; gate đọc-only trả 503 `WRITES_DISABLED_UNTIL_PHASE2` cho business writes; auth/login + gallery manifest/touch được phép; Cloud/AutoScan tắt.
+  - `inventory --dry-run`: không tạo file/thư mục trong data dir, snapshot WAL-safe qua Backup API, fail-loud exit 8 khi thiếu schema bắt buộc, exit 7 khi thiếu DB; hash snapshot v2 đầy đủ header/line/adjustment.
+  - `render-spike`: render bill JPEG + tem trong tiến trình server, hash pixel khớp desktop.
+  - Headless `--toggle-printed` từ chối (exit 5) khi `server.lock` đang bị giữ.
 
 ## Active tasks
 
-- Không có task code đang dở. Working tree sạch sau commit docs.
+- Không có code đang dở. Working tree sẽ sạch sau commit docs/evidence.
 
 ## Important technical decisions
 
-- Một physical folder = một Order; gallery chỉ đọc file JPG/JPEG trực tiếp trong print folder đã resolve, không fallback sang thư mục khác, không đụng counts/billing/hóa đơn khóa.
-- Gallery application service (`IOrderGalleryService`) là transport-neutral để LAN Phase 1 chỉ re-host, không viết lại.
-- WPF không dùng virtualization thật (layout nhóm + wrap); thay bằng cửa sổ bitmap bounded — chấp nhận element nhẹ, giải phóng bitmap ngoài viewport.
-- Cloud gallery bị freeze mở rộng cho tới sau LAN Phase 1 vì CloudSyncService sẽ chuyển sang service host.
+- Một writer host: server sở hữu DB/scan/cloud; client chỉ qua API (Phase 3).
+- Phase 1 chưa mở ghi nghiệp vụ: mọi write trả 503 cho tới khi có revision/idempotency ở Phase 2.
+- Inventory là công cụ cutover: đọc snapshot, không migrate, không ghi nguồn; kiểm tra hash + exit code.
+- Health không lộ đường dẫn/secret; readiness phản ánh DB probe + mobile API.
 
-## Known blockers / limitations
+## Gate / review status
 
-- WPF gallery **chưa nghiệm thu bằng mắt** (QA chỉ xác minh cache/log/DB); cần một lần mở thử trên máy thật.
-- Chưa in tem trên máy in nhiệt thật (chỉ test render/dimension).
-- Cloud production chưa deploy: cần chạy migration 0007 remote **trước**, set `SYNC_SECRET`/`JWT_SECRET` (đã có trên production, không ghi vào repo), deploy Worker, rồi phát hành PC.
-- Local D1 dev state đã apply 0007 bản cũ trước khi bổ sung 3 cột `cloud_bills`; cần xóa/backup `.wrangler/state/v3/d1` (dev-only) hoặc dùng DB mới trước khi test local lần tới. Vitest luôn apply migration mới từ đầu.
-- PC↔Cloud gallery sync mới kiểm chứng bằng unit/integration tests + mô phỏng local, chưa chạy với production.
+- QA: PASS (evidence `docs/qa-evidence-phase1/QA_REPORT.md`, addendum #3).
+- Code Reviewer: LGTM cho range chính; fixes được re-review.
+- Final Reviewer: **FINAL PASS** tại `e229d5c`; 2 non-blocking deviations ghi ở `docs/phase1-inventory-contract.md` §8.
 
-## References
+## Known limitations / follow-up
 
-- Code commit: `9f3bfba`
-- QA: `docs/qa-evidence-gallery/QA_REPORT.md`
-- LAN Phase 0: `docs/adr/ADR-002-lan-authoritative-server.md`, `docs/LAN_PHASE0_INVENTORY.md`, `docs/LAN_PHASE0_QUESTIONS.md`
-- Plans: `docs/PLAN_ORDER_THUMBNAIL_GALLERY.md`, `docs/PLAN_LAN_SERVER_WORKSTATIONS.md`
+- **Session 0 Windows Service** chưa cài/kiểm chứng (Phase 5/6); renderer mới chứng minh trên console host.
+- Cloud/AutoScan tắt trong server profile Phase 1 (Q-B4/Q-B7).
+- Business writes vẫn 503 tới Phase 2.
+- Desktop standalone vẫn dùng DB LocalAppData riêng cho tới Phase 3 client (không đồng bộ với server DB).
+- Exit code 1 của inventory có thể đã in JSON trước khi phát hiện sai lệch hash → automation phải kiểm exit code; dự kiến sửa ordering ở Phase 2.
+- `bill_lines` chỉ optional khi không có locked legacy bills (nếu có → exit 8).
 
-## Recommended next step
+## Commits
 
-1. Chốt 7 quyết định trong `docs/LAN_PHASE0_QUESTIONS.md`.
-2. LAN Phase 1 slice 1–3 (shared composition root → `LalabAutoReport.Server` console/Windows Service → re-host Kestrel/PWA/gallery read-only), giữ Cloud/AutoScan tắt trong server mode.
-3. Trước release Cloud: deploy migration 0007 → Worker → PC; xác minh gallery cloud thật.
+- `9f3bfba` gallery/labels; `5960bfa` docs gallery/LAN Phase 0.
+- `08f1b3f` composition root + move transport.
+- `e29b3ae` server host skeleton.
+- `739ea1e` read-only loopback API.
+- `425bf86` renderer spike + headless guard.
+- `fdb4d7f`, `6513edf`, `e229d5c` final-review fixes.
+
+## Recommended next step (Phase 2)
+
+1. Auth: PIN hashed, session/device lifecycle, capability matrix (Admin/Staff; no cashier role yet), revoke/rate-limit.
+2. Commands: desired-state set commands, revision checks, idempotency keys/receipts, operation lookup.
+3. Mutation handlers: atomic bill-job claim, audit/outbox, conflict UX; enable writes only after concurrency/crash tests pass.

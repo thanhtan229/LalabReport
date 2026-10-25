@@ -1,0 +1,4 @@
+Exit Code: 3
+=== STDOUT ===
+=== STDERR ===
+[L?I KH?I D?NG] Kh�ng th? chi?m quy?n kh?i d?ng server: Named mutex 'Global\LalabAutoReport.Server' dang du?c n?m gi? b?i m?t ti?n tr�nh server kh�c.

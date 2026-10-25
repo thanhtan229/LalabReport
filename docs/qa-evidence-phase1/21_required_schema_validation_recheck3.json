@@ -1,0 +1,38 @@
+{
+  "1a_drop_customer_bills": {
+    "exit_code": 8,
+    "stdout_empty": true,
+    "stderr": "[L\u1ed6I INVENTORY] L\u1ed7i truy v\u1ea5n ho\u1eb7c l\u01b0\u1ee3c \u0111\u1ed3 c\u01a1 s\u1edf d\u1eef li\u1ec7u kh\u00f4ng h\u1ee3p l\u1ec7: L\u01b0\u1ee3c \u0111\u1ed3 thi\u1ebfu b\u1ea3ng b\u1eaft bu\u1ed9c: customer_bills",
+    "pass": true
+  },
+  "1b_rename_phone_snapshot": {
+    "exit_code": 8,
+    "stdout_empty": true,
+    "stderr": "[L\u1ed6I INVENTORY] L\u1ed7i truy v\u1ea5n ho\u1eb7c l\u01b0\u1ee3c \u0111\u1ed3 c\u01a1 s\u1edf d\u1eef li\u1ec7u kh\u00f4ng h\u1ee3p l\u1ec7: B\u1ea3ng 'customer_bills' thi\u1ebfu c\u1ed9t b\u1eaft bu\u1ed9c: phone_snapshot",
+    "pass": true
+  },
+  "1c_rename_qty_override_reason": {
+    "exit_code": 8,
+    "stdout_empty": true,
+    "stderr": "[L\u1ed6I INVENTORY] L\u1ed7i truy v\u1ea5n ho\u1eb7c l\u01b0\u1ee3c \u0111\u1ed3 c\u01a1 s\u1edf d\u1eef li\u1ec7u kh\u00f4ng h\u1ee3p l\u1ec7: B\u1ea3ng 'customer_bill_lines' thi\u1ebfu c\u1ed9t b\u1eaft bu\u1ed9c: quantity_override_reason",
+    "pass": true
+  },
+  "1d_drop_cloud_operational_outbox": {
+    "exit_code": 0,
+    "cloud_operational_outbox_pending": null,
+    "pass": true
+  },
+  "1e_v23_immutability": {
+    "exit_code": 0,
+    "schema_version": 23,
+    "dir_before": [
+      "lalab_autoreport.db"
+    ],
+    "dir_after": [
+      "lalab_autoreport.db"
+    ],
+    "hash_before": "e2ed7c9fa9882e142a3955f14dd2ba8b23c301187999254d384eb3af2ae79d4b",
+    "hash_after": "e2ed7c9fa9882e142a3955f14dd2ba8b23c301187999254d384eb3af2ae79d4b",
+    "pass": true
+  }
+}

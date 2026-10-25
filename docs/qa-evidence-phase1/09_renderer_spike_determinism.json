@@ -1,0 +1,53 @@
+{
+  "run1": {
+    "billId": 1,
+    "jpegPath": "C:\\Users\\Admin\\AppData\\Local\\Temp\\lalab_qa_render_out1\\BILL-20260929-0001_Van-An.jpg",
+    "jpegSha256": "49caea17e448fdede704024ba7cd69cb59421b15958e42a9149ff1f3805adb89",
+    "jpegBytes": 148361,
+    "jpegWidth": 1080,
+    "jpegHeight": 930,
+    "labelPath": "C:\\Users\\Admin\\AppData\\Local\\Temp\\lalab_qa_render_out1\\Label_BILL-20260929-0001_V\u0103n_An.png",
+    "labelSha256": "58950385618e4f4b7845a0a6bd142db4de3011b948c9e66247399c0133683576",
+    "labelBytes": 44276,
+    "labelWidth": 800,
+    "labelHeight": 480,
+    "processId": 56608,
+    "sessionId": 1,
+    "buildId": "2.0.0+425bf865fc75a3fbb1ef582c158324109dd25a3e+2.0.0"
+  },
+  "run2": {
+    "billId": 1,
+    "jpegPath": "C:\\Users\\Admin\\AppData\\Local\\Temp\\lalab_qa_render_out2\\BILL-20260929-0001_Van-An.jpg",
+    "jpegSha256": "49caea17e448fdede704024ba7cd69cb59421b15958e42a9149ff1f3805adb89",
+    "jpegBytes": 148361,
+    "jpegWidth": 1080,
+    "jpegHeight": 930,
+    "labelPath": "C:\\Users\\Admin\\AppData\\Local\\Temp\\lalab_qa_render_out2\\Label_BILL-20260929-0001_V\u0103n_An.png",
+    "labelSha256": "58950385618e4f4b7845a0a6bd142db4de3011b948c9e66247399c0133683576",
+    "labelBytes": 44276,
+    "labelWidth": 800,
+    "labelHeight": 480,
+    "processId": 77648,
+    "sessionId": 1,
+    "buildId": "2.0.0+425bf865fc75a3fbb1ef582c158324109dd25a3e+2.0.0"
+  },
+  "determinism_verification": {
+    "jpeg_sha256_match": true,
+    "run1_jpeg_sha256": "49caea17e448fdede704024ba7cd69cb59421b15958e42a9149ff1f3805adb89",
+    "run2_jpeg_sha256": "49caea17e448fdede704024ba7cd69cb59421b15958e42a9149ff1f3805adb89",
+    "label_sha256_match": true,
+    "run1_label_sha256": "58950385618e4f4b7845a0a6bd142db4de3011b948c9e66247399c0133683576",
+    "run2_label_sha256": "58950385618e4f4b7845a0a6bd142db4de3011b948c9e66247399c0133683576",
+    "jpeg_dimensions": "1080x930",
+    "label_dimensions": "800x480"
+  },
+  "db_immutability_verification": {
+    "bill_1_unchanged": true,
+    "customer_bills_count_unchanged": true,
+    "customer_bill_lines_count_unchanged": true,
+    "bill_1_status": "Locked",
+    "bill_1_is_paid": 0,
+    "bill_1_locked_at": "2026-09-29T06:06:14.6509865+00:00",
+    "bill_1_updated_at": "2026-09-29T06:06:14.6510280+00:00"
+  }
+}

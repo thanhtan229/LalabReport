@@ -1,0 +1,19 @@
+=== HEADLESS SERVER LOCK GUARD VERIFICATION ===
+Target folder: D:\___TOOLS\__TINIX\LalabReport\TEST_DATA_LALAB\2026-09-29\Quang Studio\15x21 in
+LALAB_SERVER_DATA_DIR: C:\Users\Admin\AppData\Local\Temp\lalab_qa_headless_server
+Isolated Data Dir: C:\Users\Admin\AppData\Local\Temp\lalab_qa_headless_iso
+
+--- TEST 1: Headless execution while server holds server.lock ---
+Command: LalabAutoReport.UI.exe --toggle-printed "D:\___TOOLS\__TINIX\LalabReport\TEST_DATA_LALAB\2026-09-29\Quang Studio\15x21 in" --isolated-data-directory "C:\Users\Admin\AppData\Local\Temp\lalab_qa_headless_iso"
+Exit Code: 5 (Expected: 5)
+STDOUT: 
+STDERR: [L?I KH?I �?NG] M�y ch? Lalab Server dang ho?t d?ng (server.lock dang du?c n?m gi?). Thao t�c --toggle-printed ngo?i tuy?n b? t? ch?i d? tr�nh xung d?t d? li?u.
+
+--- TEST 2: Headless execution after server stopped ---
+Command: LalabAutoReport.UI.exe --toggle-printed "D:\___TOOLS\__TINIX\LalabReport\TEST_DATA_LALAB\2026-09-29\Quang Studio\15x21 in" --isolated-data-directory "C:\Users\Admin\AppData\Local\Temp\lalab_qa_headless_iso"
+Exit Code: 0 (Expected: 0)
+STDOUT: 
+STDERR: 
+
+--- TEST 3: Lingering processes check ---
+Lingering processes: None (0 lingering processes)

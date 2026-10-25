@@ -1,0 +1,36 @@
+
+LocalAddress LocalPort    State OwningProcess
+------------ ---------    ----- -------------
+127.0.0.1         5205 TimeWait             0
+127.0.0.1         5205 TimeWait             0
+127.0.0.1         5205 TimeWait             0
+127.0.0.1         5205 TimeWait             0
+127.0.0.1         5205 TimeWait             0
+127.0.0.1         5205 TimeWait             0
+127.0.0.1         5205   Listen         17540
+127.0.0.1         5205 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065   Listen         17540
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+127.0.0.1         5065 TimeWait             0
+
+

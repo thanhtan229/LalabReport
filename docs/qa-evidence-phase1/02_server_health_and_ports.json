@@ -1,0 +1,28 @@
+{
+  "live": {
+    "status_code": 200,
+    "json": {
+      "status": "Live",
+      "buildId": "2.0.0+425bf865fc75a3fbb1ef582c158324109dd25a3e+2.0.0",
+      "assemblyVersion": "2.0.0",
+      "schemaVersion": 24,
+      "dataDir": "C:\\Users\\Admin\\AppData\\Local\\Temp\\lalab_qa_step_b",
+      "startedAtUtc": "2026-10-25T11:14:49.2199142+00:00",
+      "cloud": "disabled",
+      "autoScan": "disabled"
+    }
+  },
+  "ready": {
+    "status_code": 200,
+    "json": {
+      "status": "Ready",
+      "buildId": "2.0.0+425bf865fc75a3fbb1ef582c158324109dd25a3e+2.0.0",
+      "assemblyVersion": "2.0.0",
+      "schemaVersion": 24,
+      "dataDir": "C:\\Users\\Admin\\AppData\\Local\\Temp\\lalab_qa_step_b",
+      "startedAtUtc": "2026-10-25T11:14:49.2199142+00:00",
+      "cloud": "disabled",
+      "autoScan": "disabled"
+    }
+  }
+}

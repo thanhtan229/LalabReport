@@ -1,0 +1,11 @@
+{
+  "verdict": "PASS",
+  "test_suite_passed": 689,
+  "loopback_only": true,
+  "tcp_listeners": "LocalAddress LocalPort  State OwningProcess\n------------ ---------  ----- -------------\n127.0.0.1         5236 Listen         65052\n127.0.0.1         5096 Listen         65052",
+  "gallery_request_status": 200,
+  "gallery_touch_status": 200,
+  "order_note_write_status": 503,
+  "order_note_write_code": "WRITES_DISABLED_UNTIL_PHASE2",
+  "no_lingering_processes": true
+}

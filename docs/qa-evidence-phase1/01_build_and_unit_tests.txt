@@ -1,0 +1,56 @@
+﻿=== GIT COMMIT & STATUS ===
+HEAD: 425bf865fc75a3fbb1ef582c158324109dd25a3e feat(server): add renderer spike and headless server-lock guard (Sun Oct 25 18:00:36 2026 +0700)
+On branch master
+Your branch is ahead of 'origin/master' by 6 commits.
+  (use "git push" to publish your local commits)
+
+nothing to commit, working tree clean
+
+=== DOTNET BUILD SERVER (Debug) ===
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  LalabAutoReport.Core -> D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Core\bin\Debug\net8.0\LalabAutoReport.Core.dll
+D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\Services\OrderGalleryService.cs(128,37): warning CS8601: Possible null reference assignment. [D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\LalabAutoReport.Infrastructure.csproj]
+D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\Services\OrderGalleryService.cs(129,30): warning CS8601: Possible null reference assignment. [D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\LalabAutoReport.Infrastructure.csproj]
+D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\Services\OrderGalleryService.cs(220,45): warning CS8601: Possible null reference assignment. [D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\LalabAutoReport.Infrastructure.csproj]
+  LalabAutoReport.Infrastructure -> D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\bin\Debug\net8.0-windows\LalabAutoReport.Infrastructure.dll
+  LalabAutoReport.Server -> D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Server\bin\Debug\net8.0-windows\LalabAutoReport.Server.dll
+
+Build succeeded.
+
+D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\Services\OrderGalleryService.cs(128,37): warning CS8601: Possible null reference assignment. [D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\LalabAutoReport.Infrastructure.csproj]
+D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\Services\OrderGalleryService.cs(129,30): warning CS8601: Possible null reference assignment. [D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\LalabAutoReport.Infrastructure.csproj]
+D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\Services\OrderGalleryService.cs(220,45): warning CS8601: Possible null reference assignment. [D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\LalabAutoReport.Infrastructure.csproj]
+    3 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:03.35
+ExitCode: 0
+
+=== DOTNET BUILD UI (Debug) ===
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  LalabAutoReport.Core -> D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Core\bin\Debug\net8.0\LalabAutoReport.Core.dll
+D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\Services\OrderGalleryService.cs(128,37): warning CS8601: Possible null reference assignment. [D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\LalabAutoReport.Infrastructure.csproj]
+D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\Services\OrderGalleryService.cs(129,30): warning CS8601: Possible null reference assignment. [D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\LalabAutoReport.Infrastructure.csproj]
+D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\Services\OrderGalleryService.cs(220,45): warning CS8601: Possible null reference assignment. [D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\LalabAutoReport.Infrastructure.csproj]
+  LalabAutoReport.Infrastructure -> D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\bin\Debug\net8.0-windows\LalabAutoReport.Infrastructure.dll
+  LalabAutoReport.UI -> D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.UI\bin\Debug\net8.0-windows\LalabAutoReport.UI.dll
+
+Build succeeded.
+
+D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\Services\OrderGalleryService.cs(128,37): warning CS8601: Possible null reference assignment. [D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\LalabAutoReport.Infrastructure.csproj]
+D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\Services\OrderGalleryService.cs(129,30): warning CS8601: Possible null reference assignment. [D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\LalabAutoReport.Infrastructure.csproj]
+D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\Services\OrderGalleryService.cs(220,45): warning CS8601: Possible null reference assignment. [D:\___TOOLS\__TINIX\LalabReport\src\LalabAutoReport.Infrastructure\LalabAutoReport.Infrastructure.csproj]
+    3 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:06.26
+ExitCode: 0
+
+=== DOTNET TEST (Debug) ===
+Test run for D:\___TOOLS\__TINIX\LalabReport\tests\LalabAutoReport.Tests\bin\Debug\net8.0-windows\LalabAutoReport.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:   680, Skipped:     0, Total:   680, Duration: 1 m 21 s - LalabAutoReport.Tests.dll (net8.0)
+ExitCode: 0
