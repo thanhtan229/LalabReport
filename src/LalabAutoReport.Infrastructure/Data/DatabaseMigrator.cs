@@ -771,6 +771,29 @@ public class DatabaseMigrator : IDatabaseMigrator
                 CREATE INDEX IF NOT EXISTS idx_thumbnail_cache_last_used ON thumbnail_cache_entries(last_used_at_utc);
                 CREATE INDEX IF NOT EXISTS idx_thumbnail_cache_source ON thumbnail_cache_entries(root_folder_id, source_relative_path);
                 "
+            },
+            new MigrationDefinition
+            {
+                Version = 24,
+                Name = "ServerIdentity",
+                Sql = @"
+                CREATE TABLE IF NOT EXISTS server_identity (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    server_id TEXT NOT NULL,
+                    created_at_utc TEXT NOT NULL
+                );
+                ",
+                PostAction = async (conn, tx, logger) =>
+                {
+                    await conn.ExecuteAsync(@"
+                        INSERT OR IGNORE INTO server_identity (id, server_id, created_at_utc)
+                        VALUES (1, @ServerId, @CreatedAt);
+                    ", new
+                    {
+                        ServerId = Guid.NewGuid().ToString(),
+                        CreatedAt = DateTimeOffset.UtcNow.ToString("o")
+                    }, transaction: tx);
+                }
             }
 
         };

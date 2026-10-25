@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/LalabAutoReport.Core/LalabAutoReport.Core.csproj" />
     <Project Path="src/LalabAutoReport.Infrastructure/LalabAutoReport.Infrastructure.csproj" />
+    <Project Path="src/LalabAutoReport.Server/LalabAutoReport.Server.csproj" />
     <Project Path="src/LalabAutoReport.UI/LalabAutoReport.UI.csproj" />
   </Folder>
   <Folder Name="/tests/">
