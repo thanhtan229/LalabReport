@@ -58,3 +58,21 @@ Cập nhật: 25/10/2026. Bản ghi bàn giao ngắn; Git + test evidence là ng
 1. Auth: PIN hashed, session/device lifecycle, capability matrix (Admin/Staff; no cashier role yet), revoke/rate-limit.
 2. Commands: desired-state set commands, revision checks, idempotency keys/receipts, operation lookup.
 3. Mutation handlers: atomic bill-job claim, audit/outbox, conflict UX; enable writes only after concurrency/crash tests pass.
+
+
+---
+
+## Phase 2 progress
+
+- **B1 — Auth foundation: DONE** (commit `0f2a7b9`, review LGTM).
+  - V25 `auth_credentials` (PBKDF2-SHA256 600k, per-role epoch), V26 `auth_sessions`; `LatestVersion=26`.
+  - Legacy plaintext PIN migrated once + startup scrubber; PIN change/clear revokes role sessions and legacy grace.
+  - `lsv2` opaque sessions (hashed at rest, revoke/expiry/epoch), login rate limit, capability matrix; legacy HMAC GET/HEAD-only and pre-cutoff only; query token restricted to image GET.
+  - Settings PIN write-only + explicit clear; server business writes still 503.
+  - Validation: build 0 warnings; 735 tests pass; runtime smoke (lsv2 login, pre/post-cutoff legacy, standalone v2 write 200 vs server 503, plaintext cleared, audit no PIN).
+  - Behavior changes to release-note: PIN not viewable (empty = unchanged, explicit clear); PWA re-login once; (double-bill/marker/note-limit changes land in B2/B3).
+- **B2 (revisions, receipts, command pipeline, DB guards): NOT STARTED.**
+- **B3 (v1 HTTP commands, legacy adapters, PWA, enable note/delivered/printed): NOT STARTED.**
+- **B4 (hardening/load/docs/final review): NOT STARTED.**
+
+Next: implement B2 exactly per `docs/PLAN_LAN_PHASE2.md` §1.4–1.6, §3, §6 B2; do not enable writes.
