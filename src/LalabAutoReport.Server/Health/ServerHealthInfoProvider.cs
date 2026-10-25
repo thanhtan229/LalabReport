@@ -38,6 +38,10 @@ public class ServerHealthDto
     [JsonPropertyName("components")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public Dictionary<string, string>? Components { get; set; }
+
+    [JsonPropertyName("capabilities")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Capabilities { get; set; }
 }
 
 public class ServerHealthInfoProvider
@@ -49,6 +53,7 @@ public class ServerHealthInfoProvider
     private readonly Func<bool>? _isReadyProvider;
     private readonly Func<Dictionary<string, string>>? _componentsProvider;
     private readonly Func<Task<ServerReadinessResult>>? _readinessEvaluatorAsync;
+    private readonly Func<IEnumerable<string>>? _capabilitiesProvider;
 
     public string BuildId => _buildId;
     public string AssemblyVersion => _assemblyVersion;
@@ -59,13 +64,15 @@ public class ServerHealthInfoProvider
         Func<int>? schemaVersionProvider = null,
         Func<bool>? isReadyProvider = null,
         Func<Dictionary<string, string>>? componentsProvider = null,
-        Func<Task<ServerReadinessResult>>? readinessEvaluatorAsync = null)
+        Func<Task<ServerReadinessResult>>? readinessEvaluatorAsync = null,
+        Func<IEnumerable<string>>? capabilitiesProvider = null)
     {
         _startedAtUtc = startedAtUtc ?? DateTimeOffset.UtcNow;
         _schemaVersionProvider = schemaVersionProvider;
         _isReadyProvider = isReadyProvider;
         _componentsProvider = componentsProvider;
         _readinessEvaluatorAsync = readinessEvaluatorAsync;
+        _capabilitiesProvider = capabilitiesProvider;
 
         var assembly = typeof(ServerHealthInfoProvider).Assembly;
         var infoVersionAttr = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
@@ -83,8 +90,9 @@ public class ServerHealthInfoProvider
         Func<int>? schemaVersionProvider = null,
         Func<bool>? isReadyProvider = null,
         Func<Dictionary<string, string>>? componentsProvider = null,
-        Func<Task<ServerReadinessResult>>? readinessEvaluatorAsync = null)
-        : this(startedAtUtc, schemaVersionProvider, isReadyProvider, componentsProvider, readinessEvaluatorAsync)
+        Func<Task<ServerReadinessResult>>? readinessEvaluatorAsync = null,
+        Func<IEnumerable<string>>? capabilitiesProvider = null)
+        : this(startedAtUtc, schemaVersionProvider, isReadyProvider, componentsProvider, readinessEvaluatorAsync, capabilitiesProvider)
     {
     }
 
@@ -116,7 +124,8 @@ public class ServerHealthInfoProvider
                 StartedAtUtc = _startedAtUtc.ToString("o"),
                 Cloud = "disabled",
                 AutoScan = "disabled",
-                Components = result.Components
+                Components = result.Components,
+                Capabilities = _capabilitiesProvider?.Invoke()?.ToList()
             };
             return (result.IsReady, dto);
         }
@@ -131,7 +140,8 @@ public class ServerHealthInfoProvider
             StartedAtUtc = _startedAtUtc.ToString("o"),
             Cloud = "disabled",
             AutoScan = "disabled",
-            Components = _componentsProvider?.Invoke()
+            Components = _componentsProvider?.Invoke(),
+            Capabilities = _capabilitiesProvider?.Invoke()?.ToList()
         };
         return (ready, defaultDto);
     }

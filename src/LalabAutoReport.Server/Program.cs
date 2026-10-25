@@ -74,6 +74,18 @@ public class Program
 
         try
         {
+            // Resolve LAN write capabilities
+            HashSet<string> enabledCapabilities = string.Equals(cliOptions.LanWrites, "orders", StringComparison.OrdinalIgnoreCase)
+                ? new HashSet<string>(StringComparer.Ordinal)
+                {
+                    LalabAutoReport.Contracts.Capabilities.OrdersSetDelivered,
+                    LalabAutoReport.Contracts.Capabilities.OrdersSetPrinted,
+                    LalabAutoReport.Contracts.Capabilities.OrdersEditNote
+                }
+                : new HashSet<string>(StringComparer.Ordinal);
+
+            Log.Information("LAN Writes mode: {LanWrites} ({Count} capabilities enabled)", cliOptions.LanWrites, enabledCapabilities.Count);
+
             // 4. Configure DI services via AddLalabCore
             var services = new ServiceCollection();
             services.AddLogging(b => b.AddSerilog(dispose: true));
@@ -84,7 +96,7 @@ public class Program
                 options.EnableCloudSync = false;
                 options.EnableMobileWebServer = true;
                 options.MobileWebServerLoopbackOnly = true;
-                options.MobileWebServerReadOnlyMode = true;
+                options.MobileWebServerEnabledWriteCapabilities = enabledCapabilities;
                 options.MobileWebServerPort = cliOptions.Port;
             });
 
@@ -327,7 +339,8 @@ public class Program
                     ["database"] = guard.IsAcquired ? "ready" : "unavailable",
                     ["mobileApi"] = mobileServer.IsRunning ? "ready" : "unavailable"
                 },
-                readinessEvaluatorAsync: readinessEvaluator);
+                readinessEvaluatorAsync: readinessEvaluator,
+                capabilitiesProvider: () => enabledCapabilities);
 
             // 9. Start Loopback Health Endpoints with Minimal WebApplication
             var builder = WebApplication.CreateBuilder();
@@ -436,6 +449,27 @@ public class Program
                 else
                 {
                     error = "Giá trị cổng sau --health-port không hợp lệ (phải từ 1 đến 65535)";
+                    return false;
+                }
+            }
+            else if (string.Equals(arg, "--lan-writes", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 < args.Length)
+                {
+                    string mode = args[++i].ToLowerInvariant();
+                    if (mode is "none" or "orders")
+                    {
+                        options.LanWrites = mode;
+                    }
+                    else
+                    {
+                        error = "Giá trị sau --lan-writes phải là 'none' hoặc 'orders'";
+                        return false;
+                    }
+                }
+                else
+                {
+                    error = "Thiếu giá trị sau tham số --lan-writes (chọn 'none' hoặc 'orders')";
                     return false;
                 }
             }
@@ -645,6 +679,7 @@ Tùy chọn:
   --data-dir <path>     Đường dẫn thư mục dữ liệu server (Mặc định: %ProgramData%\LalabAutoReport\Server)
   --port <port>         Cổng HTTP cho Mobile Web Server (0 = lấy từ Cài đặt, mặc định: 0)
   --health-port <port>  Cổng HTTP loopback cho health check (Mặc định: 5099)
+  --lan-writes <mode>   Quyền ghi LAN: none hoặc orders (Mặc định: orders)
   --bill-id <id>        ID hóa đơn cần xuất (dùng cho render-spike)
   --out <dir>           Thư mục đích lưu ảnh JPEG và nhãn in (dùng cho render-spike)
 
@@ -670,6 +705,8 @@ Mã thoát (Exit Codes):
         public int Port { get; set; } = 0;
 
         public int HealthPort { get; set; } = 5099;
+
+        public string LanWrites { get; set; } = "orders";
 
         public bool IsInventoryDryRun { get; set; }
 

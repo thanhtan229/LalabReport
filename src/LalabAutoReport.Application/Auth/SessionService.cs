@@ -119,7 +119,9 @@ public sealed class SessionService : ISessionService
             caps,
             session.DeviceId,
             session.DeviceLabel,
-            session.IssuedIp);
+            session.IssuedIp,
+            session.ExpiresAtUtc,
+            session.ClientKind);
     }
 
     public async Task RevokeSessionAsync(

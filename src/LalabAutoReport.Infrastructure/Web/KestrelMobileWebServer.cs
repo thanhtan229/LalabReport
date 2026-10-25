@@ -13,6 +13,8 @@ using LalabAutoReport.Core.Services;
 using LalabAutoReport.Infrastructure.Services;
 using LalabAutoReport.ApplicationCore.Auth;
 using LalabAutoReport.Contracts;
+using LalabAutoReport.ApplicationCore.Commands;
+using LalabAutoReport.Contracts.Commands;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -25,10 +27,6 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
 {
     private static readonly Regex ImageQueryTokenAllowedRegex = new(
         @"^/api/(orders/\d+/(thumbnail|gallery/images/[^/]+|label)|bills/\d+/(image|label|qr))/?$",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    private static readonly Regex GalleryAllowedPathRegex = new(
-        @"^/api/orders/[^/]+/gallery/(requests|touch)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly IServiceProvider _serviceProvider;
@@ -74,41 +72,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
     {
     }
 
-    public static bool IsAllowedWritePath(string method, string? path)
-    {
-        if (HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method))
-        {
-            return true;
-        }
-
-        if (!HttpMethods.IsPost(method) && !HttpMethods.IsDelete(method))
-        {
-            return false;
-        }
-
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return false;
-        }
-
-        var cleanPath = path;
-        int queryIndex = cleanPath.IndexOf('?');
-        if (queryIndex >= 0)
-        {
-            cleanPath = cleanPath.Substring(0, queryIndex);
-        }
-        cleanPath = cleanPath.TrimEnd('/');
-
-        if (string.Equals(cleanPath, "/api/auth/login", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(cleanPath, "/api/v1/auth/sessions", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(cleanPath, "/api/v1/auth/sessions/current", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(cleanPath, "/api/v1/admin/sessions/revoke-all", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return GalleryAllowedPathRegex.IsMatch(cleanPath);
-    }
+    public static bool IsAllowedWritePath(string method, string? path) => LanWriteGate.IsAlwaysAllowed(method, path);
 
     public static bool IsAllowedWritePath(string? path) => IsAllowedWritePath(HttpMethods.Post, path);
 
@@ -162,7 +126,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             });
 
             var app = builder.Build();
-            app.UseCors();
+            app.UseWhen(ctx => !ctx.Request.Path.StartsWithSegments("/api/v1"), branch => branch.UseCors());
 
             ConfigureEndpoints(app);
 
@@ -214,6 +178,26 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
 
     private void ConfigureEndpoints(WebApplication app)
     {
+        if (_options.EnabledWriteCapabilities != null)
+        {
+            app.Use(async (ctx, next) =>
+            {
+                if (!LanWriteGate.IsAllowed(ctx.Request.Method, ctx.Request.Path.Value, _options.EnabledWriteCapabilities))
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                    ctx.Response.ContentType = "application/json; charset=utf-8";
+                    await ctx.Response.WriteAsJsonAsync(new
+                    {
+                        code = ApiErrorCodes.WritesDisabledUntilPhase2,
+                        message = "Máy chủ đang chạy ở chế độ chỉ đọc LAN Phase 1. Các thao tác ghi bị tạm khóa cho đến Phase 2."
+                    });
+                    return;
+                }
+
+                await next();
+            });
+        }
+
         app.Use(async (ctx, next) =>
         {
             try
@@ -238,30 +222,10 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             }
             catch (Exception ex)
             {
-                Console.WriteLine("REQUEST FAILED: " + ex);
+                _logger?.LogError(ex, "Request failed: {Path}", ctx.Request.Path);
                 throw;
             }
         });
-
-        if (_options.ReadOnlyMode)
-        {
-            app.Use(async (ctx, next) =>
-            {
-                if (!IsAllowedWritePath(ctx.Request.Method, ctx.Request.Path.Value))
-                {
-                    ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-                    ctx.Response.ContentType = "application/json; charset=utf-8";
-                    await ctx.Response.WriteAsJsonAsync(new
-                    {
-                        code = "WRITES_DISABLED_UNTIL_PHASE2",
-                        message = "Máy chủ đang chạy ở chế độ chỉ đọc LAN Phase 1. Các thao tác ghi bị tạm khóa cho đến Phase 2."
-                    });
-                    return;
-                }
-
-                await next();
-            });
-        }
 
         // 1. Status endpoint
         app.MapGet("/api/status", async (HttpContext ctx) =>
@@ -341,7 +305,9 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
                 return Results.Json(new { success = false, message = "Mã PIN Admin và Nhân viên không được trùng nhau. Vui lòng cấu hình lại trong Cài đặt." }, statusCode: StatusCodes.Status503ServiceUnavailable);
             }
 
+#pragma warning disable CS0618
             var role = _authService.AuthenticateWithPin(pin, settings);
+#pragma warning restore CS0618
             if (role == null)
             {
                 return Results.Json(new { success = false, message = "Mã PIN không chính xác." }, statusCode: StatusCodes.Status401Unauthorized);
@@ -408,6 +374,9 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
                     isDelivered = o.IsDelivered,
                     deliveredAt = o.DeliveredAt?.ToString("yyyy-MM-dd HH:mm:ss"),
                     deliveredBy = o.DeliveredBy,
+                    deliveredRevision = o.DeliveredRevision,
+                    printedRevision = o.PrintedRevision,
+                    noteRevision = o.NoteRevision,
                     note = o.Note,
                     hasIssues = o.Status == OrderStatus.NeedsReview || o.Status == OrderStatus.Error,
                     isLocked = o.Status == OrderStatus.Locked,
@@ -670,6 +639,9 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
                 isDelivered = order.IsDelivered,
                 deliveredAt = order.DeliveredAt?.ToString("yyyy-MM-dd HH:mm:ss"),
                 deliveredBy = order.DeliveredBy,
+                deliveredRevision = order.DeliveredRevision,
+                printedRevision = order.PrintedRevision,
+                noteRevision = order.NoteRevision,
                 note = order.Note,
                 hasIssues = order.Status == OrderStatus.NeedsReview || order.Status == OrderStatus.Error,
                 isLocked = order.Status == OrderStatus.Locked,
@@ -688,60 +660,142 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             });
         });
 
-        // 5.2 Toggle Delivered Status
+        // 5.2 Toggle Delivered Status (Legacy Adapter)
         app.MapPost("/api/orders/{id:long}/toggle-delivered", async (long id, HttpContext ctx) =>
         {
-            var auth = CheckAuth(ctx);
-            if (!auth.IsAuthenticated) return Results.Unauthorized();
+            var actor = CheckAuth(ctx);
+            if (!actor.IsAuthenticated) return Results.Unauthorized();
 
             var orderRepo = _serviceProvider.GetRequiredService<IOrderRepository>();
             var order = await orderRepo.GetOrderByIdAsync(id);
             if (order == null) return Results.NotFound(new { message = "Không tìm thấy đơn hàng." });
 
-            bool newStatus = !order.IsDelivered;
-            DateTimeOffset? deliveredAt = newStatus ? DateTimeOffset.Now : null;
-            string? deliveredBy = newStatus ? (auth.Role == "Admin" ? "Chủ tiệm" : "Nhân viên") : null;
-
-            await orderRepo.UpdateOrderDeliveredStatusAsync(id, newStatus, deliveredAt, deliveredBy);
-
-            return Results.Ok(new
+            var handler = _serviceProvider.GetService<OrderOperationalCommandHandler>();
+            if (handler != null)
             {
-                id = order.Id,
-                syncState = (await orderRepo.GetOrderByIdAsync(id))!.HasPendingCloudChanges ? "pending" : "confirmed",
-                isDelivered = newStatus,
-                deliveredAt = deliveredAt?.ToString("yyyy-MM-dd HH:mm:ss"),
-                deliveredBy = deliveredBy
-            });
+                // Legacy adapter: server-generated operation ID is NOT retry-safe
+                string operationId = Guid.NewGuid().ToString("N");
+                bool target = !order.IsDelivered;
+
+                try
+                {
+                    await handler.SetDeliveredAsync(actor, id, new SetOrderDeliveredRequest(operationId, order.DeliveredRevision, target), cancellationToken: ctx.RequestAborted);
+                    var updated = await orderRepo.GetOrderByIdAsync(id);
+                    return Results.Ok(new
+                    {
+                        id = order.Id,
+                        syncState = updated?.HasPendingCloudChanges == true ? "pending" : "confirmed",
+                        isDelivered = updated?.IsDelivered ?? target,
+                        deliveredAt = updated?.DeliveredAt?.ToString("yyyy-MM-dd HH:mm:ss"),
+                        deliveredBy = updated?.DeliveredBy
+                    });
+                }
+                catch (StaleRevisionException)
+                {
+                    return Results.Json(new
+                    {
+                        success = false,
+                        code = ApiErrorCodes.StaleRevision,
+                        message = "Đơn vừa được cập nhật trên thiết bị khác. Vui lòng tải lại."
+                    }, statusCode: StatusCodes.Status409Conflict);
+                }
+                catch (CapabilityDeniedException)
+                {
+                    return Results.Json(new
+                    {
+                        success = false,
+                        code = ApiErrorCodes.ForbiddenCapability,
+                        message = "Bạn không có quyền thực hiện thao tác này."
+                    }, statusCode: StatusCodes.Status403Forbidden);
+                }
+            }
+            else
+            {
+                bool newStatus = !order.IsDelivered;
+                DateTimeOffset? deliveredAt = newStatus ? DateTimeOffset.Now : null;
+                string? deliveredBy = newStatus ? (actor.Role == "Admin" ? "Chủ tiệm" : "Nhân viên") : null;
+
+                await orderRepo.UpdateOrderDeliveredStatusAsync(id, newStatus, deliveredAt, deliveredBy);
+
+                return Results.Ok(new
+                {
+                    id = order.Id,
+                    syncState = (await orderRepo.GetOrderByIdAsync(id))!.HasPendingCloudChanges ? "pending" : "confirmed",
+                    isDelivered = newStatus,
+                    deliveredAt = deliveredAt?.ToString("yyyy-MM-dd HH:mm:ss"),
+                    deliveredBy = deliveredBy
+                });
+            }
         });
 
-        // 5.3 Toggle Printed Status
+        // 5.3 Toggle Printed Status (Legacy Adapter)
         app.MapPost("/api/orders/{id:long}/toggle-printed", async (long id, HttpContext ctx) =>
         {
-            var auth = CheckAuth(ctx);
-            if (!auth.IsAuthenticated) return Results.Unauthorized();
+            var actor = CheckAuth(ctx);
+            if (!actor.IsAuthenticated) return Results.Unauthorized();
 
             var orderRepo = _serviceProvider.GetRequiredService<IOrderRepository>();
             var order = await orderRepo.GetOrderByIdAsync(id);
             if (order == null) return Results.NotFound(new { message = "Không tìm thấy đơn hàng." });
 
-            bool newStatus = !order.IsPrinted;
-            DateTimeOffset? printedAt = newStatus ? DateTimeOffset.Now : null;
-
-            await orderRepo.UpdateOrderPrintedStatusAsync(id, newStatus, printedAt);
-
-            return Results.Ok(new
+            var handler = _serviceProvider.GetService<OrderOperationalCommandHandler>();
+            if (handler != null)
             {
-                id = order.Id,
-                isPrinted = newStatus,
-                printedAt = printedAt?.ToString("yyyy-MM-dd HH:mm:ss")
-            });
+                // Legacy adapter: server-generated operation ID is NOT retry-safe
+                string operationId = Guid.NewGuid().ToString("N");
+                bool target = !order.IsPrinted;
+
+                try
+                {
+                    await handler.SetPrintedAsync(actor, id, new SetOrderPrintedRequest(operationId, order.PrintedRevision, target), cancellationToken: ctx.RequestAborted);
+                    var updated = await orderRepo.GetOrderByIdAsync(id);
+                    return Results.Ok(new
+                    {
+                        id = order.Id,
+                        isPrinted = updated?.IsPrinted ?? target,
+                        printedAt = updated?.PrintedAt?.ToString("yyyy-MM-dd HH:mm:ss")
+                    });
+                }
+                catch (StaleRevisionException)
+                {
+                    return Results.Json(new
+                    {
+                        success = false,
+                        code = ApiErrorCodes.StaleRevision,
+                        message = "Đơn vừa được cập nhật trên thiết bị khác. Vui lòng tải lại."
+                    }, statusCode: StatusCodes.Status409Conflict);
+                }
+                catch (CapabilityDeniedException)
+                {
+                    return Results.Json(new
+                    {
+                        success = false,
+                        code = ApiErrorCodes.ForbiddenCapability,
+                        message = "Bạn không có quyền thực hiện thao tác này."
+                    }, statusCode: StatusCodes.Status403Forbidden);
+                }
+            }
+            else
+            {
+                bool newStatus = !order.IsPrinted;
+                DateTimeOffset? printedAt = newStatus ? DateTimeOffset.Now : null;
+
+                await orderRepo.UpdateOrderPrintedStatusAsync(id, newStatus, printedAt);
+
+                return Results.Ok(new
+                {
+                    id = order.Id,
+                    isPrinted = newStatus,
+                    printedAt = printedAt?.ToString("yyyy-MM-dd HH:mm:ss")
+                });
+            }
         });
 
-        // 5.4 Update Order Note
+        // 5.4 Update Order Note (Legacy Adapter)
         app.MapPost("/api/orders/{id:long}/note", async (long id, HttpContext ctx) =>
         {
-            var auth = CheckAuth(ctx);
-            if (!auth.IsAuthenticated) return Results.Unauthorized();
+            var actor = CheckAuth(ctx);
+            if (!actor.IsAuthenticated) return Results.Unauthorized();
 
             var orderRepo = _serviceProvider.GetRequiredService<IOrderRepository>();
             var order = await orderRepo.GetOrderByIdAsync(id);
@@ -763,10 +817,57 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
                 catch { }
             }
 
-            note = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
-            await orderRepo.UpdateOrderNoteAsync(id, note);
+            var handler = _serviceProvider.GetService<OrderOperationalCommandHandler>();
+            if (handler != null)
+            {
+                // Legacy adapter: server-generated operation ID is NOT retry-safe
+                string operationId = Guid.NewGuid().ToString("N");
 
-            return Results.Ok(new { id = order.Id, note = note, syncState = (await orderRepo.GetOrderByIdAsync(id))!.HasPendingCloudChanges ? "pending" : "confirmed" });
+                try
+                {
+                    await handler.SetNoteAsync(actor, id, new SetOrderNoteRequest(operationId, order.NoteRevision, note), cancellationToken: ctx.RequestAborted);
+                    var updated = await orderRepo.GetOrderByIdAsync(id);
+                    return Results.Ok(new
+                    {
+                        id = order.Id,
+                        note = updated?.Note,
+                        syncState = updated?.HasPendingCloudChanges == true ? "pending" : "confirmed"
+                    });
+                }
+                catch (StaleRevisionException)
+                {
+                    return Results.Json(new
+                    {
+                        success = false,
+                        code = ApiErrorCodes.StaleRevision,
+                        message = "Đơn vừa được cập nhật trên thiết bị khác. Vui lòng tải lại."
+                    }, statusCode: StatusCodes.Status409Conflict);
+                }
+                catch (CapabilityDeniedException)
+                {
+                    return Results.Json(new
+                    {
+                        success = false,
+                        code = ApiErrorCodes.ForbiddenCapability,
+                        message = "Bạn không có quyền thực hiện thao tác này."
+                    }, statusCode: StatusCodes.Status403Forbidden);
+                }
+                catch (CommandValidationException ex)
+                {
+                    return Results.Json(new
+                    {
+                        success = false,
+                        code = ApiErrorCodes.ValidationFailed,
+                        message = ex.Message
+                    }, statusCode: StatusCodes.Status422UnprocessableEntity);
+                }
+            }
+            else
+            {
+                note = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+                await orderRepo.UpdateOrderNoteAsync(id, note);
+                return Results.Ok(new { id = order.Id, note = note, syncState = (await orderRepo.GetOrderByIdAsync(id))!.HasPendingCloudChanges ? "pending" : "confirmed" });
+            }
         });
 
         // 5.5 Print Order Label (Remote Thermal Print from Mobile)

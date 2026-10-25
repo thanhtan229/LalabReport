@@ -23,6 +23,7 @@ public class LalabServerCoreOptions
     public bool EnableMobileWebServer { get; set; } = true;
     public bool MobileWebServerLoopbackOnly { get; set; } = false;
     public bool MobileWebServerReadOnlyMode { get; set; } = false;
+    public IReadOnlySet<string>? MobileWebServerEnabledWriteCapabilities { get; set; }
     public int MobileWebServerPort { get; set; } = 0;
 }
 
@@ -112,12 +113,20 @@ public static class LalabServiceRegistration
         services.AddSingleton<ISessionStore, SqliteSessionStore>();
         services.AddSingleton<ISessionService, SessionService>();
         services.AddSingleton<CredentialPlaintextScrubber>();
-        services.AddSingleton(new MobileWebServerOptions
+        var webServerOptions = new MobileWebServerOptions
         {
             LoopbackOnly = options.MobileWebServerLoopbackOnly,
-            ReadOnlyMode = options.MobileWebServerReadOnlyMode,
             Port = options.MobileWebServerPort
-        });
+        };
+        if (options.MobileWebServerEnabledWriteCapabilities != null)
+        {
+            webServerOptions.EnabledWriteCapabilities = options.MobileWebServerEnabledWriteCapabilities;
+        }
+        else if (options.MobileWebServerReadOnlyMode)
+        {
+            webServerOptions.ReadOnlyMode = true;
+        }
+        services.AddSingleton(webServerOptions);
         services.AddSingleton<IMobileAuthService, MobileAuthService>();
         if (options.EnableMobileWebServer)
         {

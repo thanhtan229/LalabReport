@@ -12,6 +12,8 @@ public sealed class ActorContext
     public string? DeviceLabel { get; }
     public string? ClientIp { get; }
     public IReadOnlySet<string> Capabilities { get; }
+    public DateTimeOffset? ExpiresAtUtc { get; }
+    public string? ClientKind { get; }
 
     public bool IsAuthenticated => !string.IsNullOrEmpty(Role);
 
@@ -22,7 +24,9 @@ public sealed class ActorContext
         string? sessionId = null,
         string? deviceId = null,
         string? deviceLabel = null,
-        string? clientIp = null)
+        string? clientIp = null,
+        DateTimeOffset? expiresAtUtc = null,
+        string? clientKind = null)
     {
         Kind = kind ?? "anonymous";
         Role = role ?? string.Empty;
@@ -31,6 +35,8 @@ public sealed class ActorContext
         DeviceId = deviceId;
         DeviceLabel = deviceLabel;
         ClientIp = clientIp;
+        ExpiresAtUtc = expiresAtUtc;
+        ClientKind = clientKind;
     }
 
     public bool Has(string capability)
@@ -57,8 +63,10 @@ public sealed class ActorContext
         IReadOnlySet<string> capabilities,
         string? deviceId = null,
         string? deviceLabel = null,
-        string? clientIp = null) =>
-        new("session", role, capabilities, sessionId, deviceId, deviceLabel, clientIp);
+        string? clientIp = null,
+        DateTimeOffset? expiresAtUtc = null,
+        string? clientKind = null) =>
+        new("session", role, capabilities, sessionId, deviceId, deviceLabel, clientIp, expiresAtUtc, clientKind);
 
     public static ActorContext FromLegacyToken(string role, IReadOnlySet<string> capabilities) =>
         new("legacy_token", role, capabilities);

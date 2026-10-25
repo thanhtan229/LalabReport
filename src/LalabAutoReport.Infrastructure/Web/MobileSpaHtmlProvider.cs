@@ -223,6 +223,10 @@ public static class MobileSpaHtmlProvider
         <button onclick=""closeNoteModal()"" class=""text-slate-400 hover:text-slate-200 text-lg leading-none"">✕</button>
       </div>
       <p id=""noteModalSubtitle"" class=""text-xs text-slate-400 truncate""></p>
+      <div id=""noteConflictNotice"" class=""hidden bg-amber-950/70 border border-amber-600/70 rounded-xl p-2.5 text-xs text-amber-200 space-y-1"">
+        <div class=""font-semibold text-amber-100 flex items-center space-x-1""><span>⚠️</span> <span>Ghi chú đã được đổi trên thiết bị khác — xem lại trước khi lưu</span></div>
+        <div id=""noteConflictServerText"" class=""font-mono bg-slate-950/80 p-2 rounded text-[11px] text-amber-300 break-words""></div>
+      </div>
       <textarea id=""noteInput"" rows=""3"" placeholder=""Ví dụ: thiếu 1 tấm, giao gấp buổi chiều..."" class=""w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 focus:outline-none focus:border-sky-500""></textarea>
       <div class=""flex justify-end space-x-2 pt-1"">
         <button onclick=""closeNoteModal()"" class=""px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"">Hủy</button>
@@ -307,19 +311,61 @@ public static class MobileSpaHtmlProvider
       document.getElementById('pinError').classList.add('hidden');
     }
 
+    function generateOperationId() {
+      if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+        try {
+          const bytes = new Uint8Array(16);
+          crypto.getRandomValues(bytes);
+          bytes[6] = (bytes[6] & 0x0f) | 0x40;
+          bytes[8] = (bytes[8] & 0x3f) | 0x80;
+          const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+          return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+        } catch (e) { }
+      }
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+
+    function getDeviceId() {
+      let id = localStorage.getItem('lalab_device_id');
+      if (!id) {
+        id = generateOperationId();
+        localStorage.setItem('lalab_device_id', id);
+      }
+      return id;
+    }
+
+    function getDeviceLabel() {
+      const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : 'PWA Client';
+      return ua.length > 100 ? ua.substring(0, 100) : ua;
+    }
+
     async function submitPin() {
       const pin = document.getElementById('pinInput').value.trim();
       if (!pin) return;
 
       try {
-        const res = await fetch('/api/auth/login', {
+        const deviceId = getDeviceId();
+        const deviceLabel = getDeviceLabel();
+        let res = await fetch('/api/v1/auth/sessions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pin: pin })
+          body: JSON.stringify({ pin: pin, deviceId: deviceId, deviceLabel: deviceLabel, clientKind: 'pwa' })
         });
 
-        const data = await res.json();
-        if (data.success && data.token) {
+        if (res.status === 404) {
+          res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pin: pin })
+          });
+        }
+
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && ((data.success && data.token) || data.token)) {
           authToken = data.token;
           localStorage.setItem('lalab_token', authToken);
           await checkAuthAndLoad();
@@ -491,12 +537,14 @@ public static class MobileSpaHtmlProvider
       document.getElementById('reportMonthInput').value = monthStr;
     }
 
-    async function loadOrders() {
+    async function loadOrders(showLoading = true) {
       const date = document.getElementById('orderDateInput').value;
       if (!date) return;
 
       const orderListEl = document.getElementById('orderList');
-      orderListEl.innerHTML = '<div class=""text-center text-xs text-slate-500 py-8"">Đang tải dữ liệu...</div>';
+      if (showLoading) {
+        orderListEl.innerHTML = '<div class=""text-center text-xs text-slate-500 py-8"">Đang tải dữ liệu...</div>';
+      }
 
       try {
         const res = await fetch('/api/orders?date=' + date, {
@@ -505,14 +553,36 @@ public static class MobileSpaHtmlProvider
 
         if (!res.ok) {
           if (res.status === 401) { logout(); return; }
-          orderListEl.innerHTML = '<div class=""text-center text-xs text-rose-400 py-8"">Lỗi tải danh sách đơn</div>';
+          if (showLoading) {
+            orderListEl.innerHTML = '<div class=""text-center text-xs text-rose-400 py-8"">Lỗi tải danh sách đơn</div>';
+          }
           return;
         }
 
-        cachedOrders = await res.json();
+        const freshOrders = await res.json();
+        freshOrders.forEach(o => {
+          o.deliveredRevision = (o.deliveredRevision !== undefined && o.deliveredRevision !== null) ? o.deliveredRevision : 0;
+          o.printedRevision = (o.printedRevision !== undefined && o.printedRevision !== null) ? o.printedRevision : 0;
+          o.noteRevision = (o.noteRevision !== undefined && o.noteRevision !== null) ? o.noteRevision : 0;
+        });
+
+        if (editingNoteOrderId) {
+          const freshOrder = freshOrders.find(x => x.id === editingNoteOrderId);
+          if (freshOrder) {
+            const conflictNotice = document.getElementById('noteConflictNotice');
+            const conflictServerText = document.getElementById('noteConflictServerText');
+            if (conflictNotice && !conflictNotice.classList.contains('hidden') && conflictServerText) {
+              conflictServerText.innerText = freshOrder.note || '(Ghi chú trống)';
+            }
+          }
+        }
+
+        cachedOrders = freshOrders;
         renderOrders(cachedOrders);
       } catch (err) {
-        orderListEl.innerHTML = '<div class=""text-center text-xs text-rose-400 py-8"">Không thể kết nối máy chủ</div>';
+        if (showLoading) {
+          orderListEl.innerHTML = '<div class=""text-center text-xs text-rose-400 py-8"">Không thể kết nối máy chủ</div>';
+        }
       }
     }
 
@@ -691,48 +761,248 @@ public static class MobileSpaHtmlProvider
       renderOrders(filtered, false);
     }
 
+    async function executeOperationalCommand({
+      orderId,
+      fieldGroup,
+      path,
+      payload,
+      expectedRevision,
+      onSuccess
+    }) {
+      const operationId = generateOperationId();
+      const bodyObj = Object.assign({
+        operationId: operationId,
+        expectedRevision: expectedRevision
+      }, payload);
+
+      async function sendRequest(opId) {
+        const bodyToSend = opId === operationId ? bodyObj : Object.assign({}, bodyObj, { operationId: opId });
+        return await fetch(path, {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + authToken,
+            'Content-Type': 'application/json',
+            'X-Lalab-Client-Api': '1.0'
+          },
+          body: JSON.stringify(bodyToSend)
+        });
+      }
+
+      async function queryOperation(opId) {
+        try {
+          const opRes = await fetch('/api/v1/operations/' + opId, {
+            headers: {
+              'Authorization': 'Bearer ' + authToken
+            }
+          });
+          if (opRes.ok) {
+            return await opRes.json();
+          }
+        } catch (e) { }
+        return null;
+      }
+
+      async function pollOperation(opId) {
+        const delays = [1000, 2000, 4000];
+        let totalTime = 0;
+        for (let i = 0; i < delays.length && totalTime < 10000; i++) {
+          await new Promise(r => setTimeout(r, delays[i]));
+          totalTime += delays[i];
+          const lookup = await queryOperation(opId);
+          if (lookup) {
+            if (lookup.status === 'committed') return lookup;
+            if (lookup.status === 'not_found') return lookup;
+          }
+        }
+        return { status: 'timeout' };
+      }
+
+      async function processResponse(res) {
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          onSuccess(data);
+          return true;
+        }
+
+        if (res.status === 401) {
+          const err = await res.json().catch(() => ({}));
+          showToast(err.message || 'Phiên đã hết hiệu lực, vui lòng nhập lại PIN', false);
+          logout();
+          return false;
+        }
+
+        if (res.status === 503) {
+          const err = await res.json().catch(() => ({}));
+          showToast(err.message || 'Chức năng ghi bị tắt trên máy chủ', false);
+          return false;
+        }
+
+        if (res.status === 426) {
+          const err = await res.json().catch(() => ({}));
+          showToast(err.message || 'Ứng dụng máy khách quá cũ. Vui lòng tải lại trang.', false);
+          return false;
+        }
+
+        if (res.status === 409) {
+          const err = await res.json().catch(() => ({}));
+          if (err.code === 'STALE_REVISION') {
+            showToast('Đơn vừa được cập nhật trên thiết bị khác. Vui lòng tải lại.', false);
+            if (fieldGroup === 'note') {
+              const conflictNotice = document.getElementById('noteConflictNotice');
+              const conflictServerText = document.getElementById('noteConflictServerText');
+              if (conflictNotice && conflictServerText) {
+                const curVal = (err.currentValue && err.currentValue.note !== undefined) ? err.currentValue.note : '';
+                conflictServerText.innerText = curVal || '(Ghi chú trống)';
+                conflictNotice.classList.remove('hidden');
+              }
+              const curOrder = cachedOrders.find(x => x.id === orderId);
+              if (curOrder) {
+                if (err.currentRevision !== undefined) curOrder.noteRevision = err.currentRevision;
+                if (err.currentValue && err.currentValue.note !== undefined) curOrder.note = err.currentValue.note;
+              }
+            }
+            loadOrders(false);
+            return false;
+          }
+          showToast(err.message || 'Xung đột thao tác', false);
+          return false;
+        }
+
+        const err = await res.json().catch(() => ({}));
+        showToast(err.message || 'Không thể thực hiện thao tác', false);
+        return false;
+      }
+
+      let res;
+      try {
+        res = await sendRequest(operationId);
+      } catch (networkErr) {
+        const lookup = await queryOperation(operationId);
+        if (lookup && lookup.status === 'committed') {
+          onSuccess(lookup.result);
+          return;
+        } else if (lookup && lookup.status === 'pending') {
+          const polled = await pollOperation(operationId);
+          if (polled && polled.status === 'committed') {
+            onSuccess(polled.result);
+            return;
+          } else if (polled && polled.status === 'not_found') {
+            try {
+              const retryRes = await sendRequest(operationId);
+              await processResponse(retryRes);
+              return;
+            } catch (retryErr) {
+              showToast('Lỗi kết nối khi gửi lại yêu cầu', false);
+              return;
+            }
+          } else {
+            showToast('Chưa xác nhận được, hãy tải lại', false);
+            return;
+          }
+        } else if (lookup && lookup.status === 'not_found') {
+          try {
+            const retryRes = await sendRequest(operationId);
+            await processResponse(retryRes);
+            return;
+          } catch (retryErr) {
+            showToast('Lỗi kết nối máy chủ', false);
+            return;
+          }
+        } else {
+          showToast('Lỗi kết nối máy chủ', false);
+          return;
+        }
+      }
+
+      if (res.status === 502 || res.status === 504) {
+        const lookup = await queryOperation(operationId);
+        if (lookup && lookup.status === 'committed') {
+          onSuccess(lookup.result);
+          return;
+        }
+      }
+
+      await processResponse(res);
+    }
+
     async function toggleDelivered(orderId) {
       const o = cachedOrders.find(x => x.id === orderId);
       if (!o) return;
 
-      try {
-        const res = await fetch('/api/orders/' + orderId + '/toggle-delivered', {
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + authToken }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          o.syncState = data.syncState;
-          o.isDelivered = data.isDelivered;
-          o.deliveredAt = data.deliveredAt;
-          o.deliveredBy = data.deliveredBy;
+      const desired = !o.isDelivered;
+      const expectedRev = (o.deliveredRevision !== undefined && o.deliveredRevision !== null) ? o.deliveredRevision : 0;
+
+      await executeOperationalCommand({
+        orderId: orderId,
+        fieldGroup: 'delivered',
+        path: '/api/v1/orders/' + orderId + '/delivered',
+        payload: { delivered: desired },
+        expectedRevision: expectedRev,
+        onSuccess: (data) => {
+          if (data && data.value && data.value.delivered !== undefined) {
+            o.isDelivered = !!data.value.delivered;
+            o.deliveredAt = data.value.deliveredAt;
+            o.deliveredBy = data.value.deliveredBy;
+          } else if (data && data.delivered !== undefined) {
+            o.isDelivered = !!data.delivered;
+            o.deliveredAt = data.deliveredAt;
+            o.deliveredBy = data.deliveredBy;
+          } else if (data && data.isDelivered !== undefined) {
+            o.isDelivered = !!data.isDelivered;
+            o.deliveredAt = data.deliveredAt;
+            o.deliveredBy = data.deliveredBy;
+          } else {
+            o.isDelivered = desired;
+          }
+          if (data && data.revision !== undefined) {
+            o.deliveredRevision = data.revision;
+          } else if (data && data.deliveredRevision !== undefined) {
+            o.deliveredRevision = data.deliveredRevision;
+          }
+          if (data && data.syncState) {
+            o.syncState = data.syncState;
+          }
           if (navigator.vibrate) navigator.vibrate([50, 30, 50]);
-          showToast(data.syncState === 'pending' ? 'Đã lưu local · Chờ Cloud xác nhận' : (o.isDelivered ? 'Đã đánh dấu ĐÃ GIAO' : 'Đã hoàn tác CHƯA GIAO'), true);
+          showToast(o.syncState === 'pending' ? 'Đã lưu local · Chờ Cloud xác nhận' : (o.isDelivered ? 'Đã đánh dấu ĐÃ GIAO' : 'Đã hoàn tác CHƯA GIAO'), true);
           renderOrders(cachedOrders);
-        } else {
-          showToast('Không thể cập nhật trạng thái giao hàng', false);
         }
-      } catch (err) {
-        showToast('Lỗi kết nối khi cập nhật trạng thái', false);
-      }
+      });
     }
 
     async function togglePrinted(orderId) {
       const o = cachedOrders.find(x => x.id === orderId);
       if (!o) return;
 
-      try {
-        const res = await fetch('/api/orders/' + orderId + '/toggle-printed', {
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + authToken }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          o.isPrinted = data.isPrinted;
-          o.printedAt = data.printedAt;
+      const desired = !o.isPrinted;
+      const expectedRev = (o.printedRevision !== undefined && o.printedRevision !== null) ? o.printedRevision : 0;
+
+      await executeOperationalCommand({
+        orderId: orderId,
+        fieldGroup: 'printed',
+        path: '/api/v1/orders/' + orderId + '/printed',
+        payload: { printed: desired },
+        expectedRevision: expectedRev,
+        onSuccess: (data) => {
+          if (data && data.value && data.value.printed !== undefined) {
+            o.isPrinted = !!data.value.printed;
+            o.printedAt = data.value.printedAt;
+          } else if (data && data.printed !== undefined) {
+            o.isPrinted = !!data.printed;
+            o.printedAt = data.printedAt;
+          } else if (data && data.isPrinted !== undefined) {
+            o.isPrinted = !!data.isPrinted;
+            o.printedAt = data.printedAt;
+          } else {
+            o.isPrinted = desired;
+          }
+          if (data && data.revision !== undefined) {
+            o.printedRevision = data.revision;
+          } else if (data && data.printedRevision !== undefined) {
+            o.printedRevision = data.printedRevision;
+          }
           renderOrders(cachedOrders);
         }
-      } catch (err) { }
+      });
     }
 
     let editingNoteOrderId = null;
@@ -743,12 +1013,16 @@ public static class MobileSpaHtmlProvider
       editingNoteOrderId = orderId;
       document.getElementById('noteModalSubtitle').innerText = o.customerName + ' (' + (o.orderCode || o.folderName) + ')';
       document.getElementById('noteInput').value = o.note || '';
+      const conflictNotice = document.getElementById('noteConflictNotice');
+      if (conflictNotice) conflictNotice.classList.add('hidden');
       document.getElementById('noteModal').classList.remove('hidden');
       setTimeout(() => document.getElementById('noteInput').focus(), 100);
     }
 
     function closeNoteModal() {
       document.getElementById('noteModal').classList.add('hidden');
+      const conflictNotice = document.getElementById('noteConflictNotice');
+      if (conflictNotice) conflictNotice.classList.add('hidden');
       editingNoteOrderId = null;
     }
 
@@ -757,29 +1031,32 @@ public static class MobileSpaHtmlProvider
       const orderId = editingNoteOrderId;
       const o = cachedOrders.find(x => x.id === orderId);
       const text = document.getElementById('noteInput').value.trim();
+      const expectedRev = (o && o.noteRevision !== undefined && o.noteRevision !== null) ? o.noteRevision : 0;
 
-      try {
-        const res = await fetch('/api/orders/' + orderId + '/note', {
-          method: 'POST',
-          headers: {
-            'Authorization': 'Bearer ' + authToken,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ note: text })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (o) o.note = data.note;
+      await executeOperationalCommand({
+        orderId: orderId,
+        fieldGroup: 'note',
+        path: '/api/v1/orders/' + orderId + '/note',
+        payload: { note: text || null },
+        expectedRevision: expectedRev,
+        onSuccess: (data) => {
+          const newNote = (data && data.value && data.value.note !== undefined)
+            ? data.value.note
+            : ((data && data.note !== undefined) ? data.note : text);
+          if (o) {
+            o.note = newNote;
+            if (data && data.revision !== undefined) {
+              o.noteRevision = data.revision;
+            } else if (data && data.noteRevision !== undefined) {
+              o.noteRevision = data.noteRevision;
+            }
+          }
           closeNoteModal();
           if (navigator.vibrate) navigator.vibrate(50);
           showToast('Đã lưu ghi chú đơn hàng!', true);
           renderOrders(cachedOrders);
-        } else {
-          showToast('Không thể lưu ghi chú', false);
         }
-      } catch (err) {
-        showToast('Lỗi kết nối khi lưu ghi chú', false);
-      }
+      });
     }
 
     function viewThumbnail(orderId) {
@@ -1100,7 +1377,7 @@ public static class MobileSpaHtmlProvider
               <button onclick=""viewLabel(${billId}, null, true)"" class=""w-full flex items-center justify-center space-x-1.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold py-2.5 rounded-xl text-xs transition shadow-sm"">
                 <span>🏷️ In tem giao hàng</span>
               </button>
-${b.hasExportFile ? `              <a href=""/api/bills/${billId}/image?token=${authToken}"" target=""_blank"" class=""w-full flex items-center justify-center space-x-2 bg-sky-600 hover:bg-sky-500 text-white font-medium py-2.5 rounded-xl text-xs transition"">
+${b.hasExportFile ? `              <a href=""/api/bills/${billId}/image?token=${encodeURIComponent(authToken)}"" target=""_blank"" class=""w-full flex items-center justify-center space-x-2 bg-sky-600 hover:bg-sky-500 text-white font-medium py-2.5 rounded-xl text-xs transition"">
                 <span>Mở ảnh Hóa đơn (JPG)</span>
               </a>` : '<div>Chưa có ảnh hóa đơn.</div>'}
 ${b.hasPaymentQr ? `              <button onclick=""showBillQr(${billId})"" class=""w-full bg-slate-800 border border-slate-700 text-slate-300 font-medium py-2.5 rounded-xl text-xs"">
@@ -1330,7 +1607,7 @@ ${b.hasPaymentQr ? `              <button onclick=""showBillQr(${billId})"" clas
 
       body.innerHTML = `
         <div class=""flex flex-col items-center space-y-3"">
-          <img src=""/api/bills/${billId}/qr?token=${authToken}"" alt=""Mã VietQR"" class=""w-64 h-64 rounded-xl border border-slate-700 shadow-xl bg-white p-2"">
+          <img src=""/api/bills/${billId}/qr?token=${encodeURIComponent(authToken)}"" alt=""Mã VietQR"" class=""w-64 h-64 rounded-xl border border-slate-700 shadow-xl bg-white p-2"">
           <div class=""text-xs text-slate-300 font-medium text-center"">Quét bằng ứng dụng ngân hàng để thanh toán</div>
         </div>
       `;

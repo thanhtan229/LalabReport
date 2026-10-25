@@ -16,6 +16,7 @@ namespace LalabAutoReport.Infrastructure.Data;
 
 public class SqliteOrderOperationalCommandStore : IOrderOperationalCommandStore
 {
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private readonly ISqliteConnectionFactory _connectionFactory;
 
     public SqliteOrderOperationalCommandStore(ISqliteConnectionFactory connectionFactory)
@@ -84,7 +85,7 @@ public class SqliteOrderOperationalCommandStore : IOrderOperationalCommandStore
                     string.Equals(existingReceipt.capability, capability, StringComparison.Ordinal))
                 {
                     tx.Commit();
-                    var storedDto = JsonSerializer.Deserialize<OrderFieldStateDto>(existingReceipt.result_json)!;
+                    var storedDto = JsonSerializer.Deserialize<OrderFieldStateDto>(existingReceipt.result_json, JsonOptions)!;
                     return new OrderCommandResult
                     {
                         IsReplay = true,
@@ -118,6 +119,7 @@ public class SqliteOrderOperationalCommandStore : IOrderOperationalCommandStore
             bool isNoChange;
             JsonElement beforeValueElement;
             JsonElement targetValueElement;
+            string nowIso = DateTimeOffset.UtcNow.ToString("o");
 
             if (capability == Capabilities.OrdersSetDelivered)
             {
@@ -134,9 +136,14 @@ public class SqliteOrderOperationalCommandStore : IOrderOperationalCommandStore
                     deliveredBy = cur.delivered_by
                 })).RootElement.Clone();
 
+                string? targetDeliveredAt = desired ? (isNoChange ? cur.delivered_at : nowIso) : null;
+                string? targetDeliveredBy = desired ? (isNoChange ? cur.delivered_by : (actor.Role == "Admin" ? "Chủ tiệm" : "Nhân viên")) : null;
+
                 targetValueElement = JsonDocument.Parse(JsonSerializer.Serialize(new
                 {
-                    delivered = desired
+                    delivered = desired,
+                    deliveredAt = targetDeliveredAt,
+                    deliveredBy = targetDeliveredBy
                 })).RootElement.Clone();
             }
             else if (capability == Capabilities.OrdersSetPrinted)
@@ -154,9 +161,14 @@ public class SqliteOrderOperationalCommandStore : IOrderOperationalCommandStore
                     printProgress = cur.print_progress
                 })).RootElement.Clone();
 
+                string? targetPrintedAt = desired ? (isNoChange ? cur.printed_at : nowIso) : null;
+                int targetPrintProgress = desired ? (isNoChange ? cur.print_progress : (int)PrintStatus.Printed) : (int)PrintStatus.NotPrinted;
+
                 targetValueElement = JsonDocument.Parse(JsonSerializer.Serialize(new
                 {
-                    printed = desired
+                    printed = desired,
+                    printedAt = targetPrintedAt,
+                    printProgress = targetPrintProgress
                 })).RootElement.Clone();
             }
             else if (capability == Capabilities.OrdersEditNote)
@@ -200,7 +212,6 @@ public class SqliteOrderOperationalCommandStore : IOrderOperationalCommandStore
                 }
 
                 outcome = "Committed";
-                string nowIso = DateTimeOffset.UtcNow.ToString("o");
 
                 // 4. Conditional UPDATE on orders
                 int affected;
@@ -438,7 +449,7 @@ public class SqliteOrderOperationalCommandStore : IOrderOperationalCommandStore
             string.Equals(receipt.payload_hash, payloadHash, StringComparison.Ordinal) &&
             string.Equals(receipt.capability, capability, StringComparison.Ordinal))
         {
-            var storedDto = JsonSerializer.Deserialize<OrderFieldStateDto>(receipt.result_json)!;
+            var storedDto = JsonSerializer.Deserialize<OrderFieldStateDto>(receipt.result_json, JsonOptions)!;
             return new OrderCommandResult
             {
                 IsReplay = true,

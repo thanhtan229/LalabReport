@@ -326,6 +326,12 @@ public sealed class SqliteRoleCredentialStore : IRoleCredentialStore
                         revoked_reason = @Reason
                     WHERE role = @Role AND revoked_at_utc IS NULL;
                 ", new { Now = nowIso, Role = normRole, Reason = reason }, transaction: tx);
+
+                await conn.ExecuteAsync(@"
+                    UPDATE auth_state
+                    SET legacy_tokens_accepted_until_utc = @Now
+                    WHERE id = 1;
+                ", new { Now = nowIso }, transaction: tx);
             }
             else
             {
