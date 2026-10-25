@@ -19,6 +19,9 @@ public class LalabServerCoreOptions
     public string? ThumbnailsDirectory { get; set; }
     public bool EnableCloudSync { get; set; } = true;
     public bool EnableMobileWebServer { get; set; } = true;
+    public bool MobileWebServerLoopbackOnly { get; set; } = false;
+    public bool MobileWebServerReadOnlyMode { get; set; } = false;
+    public int MobileWebServerPort { get; set; } = 0;
 }
 
 public static class LalabServiceRegistration
@@ -94,6 +97,12 @@ public static class LalabServiceRegistration
         services.AddSingleton<IGlobalSearchService, SqliteGlobalSearchService>();
 
         // Auth & Mobile Web Server
+        services.AddSingleton(new MobileWebServerOptions
+        {
+            LoopbackOnly = options.MobileWebServerLoopbackOnly,
+            ReadOnlyMode = options.MobileWebServerReadOnlyMode,
+            Port = options.MobileWebServerPort
+        });
         services.AddSingleton<IMobileAuthService, MobileAuthService>();
         if (options.EnableMobileWebServer)
         {

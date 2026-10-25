@@ -124,4 +124,25 @@ public class LalabServiceRegistrationTests
             }
         }
     }
+
+    [Fact]
+    public void AddLalabCore_WithMobileWebServerOptions_PropagatesToRegisteredOptions()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddLalabCore(options =>
+        {
+            options.MobileWebServerLoopbackOnly = true;
+            options.MobileWebServerReadOnlyMode = true;
+            options.MobileWebServerPort = 5678;
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        var serverOptions = provider.GetRequiredService<MobileWebServerOptions>();
+        serverOptions.Should().NotBeNull();
+        serverOptions.LoopbackOnly.Should().BeTrue();
+        serverOptions.ReadOnlyMode.Should().BeTrue();
+        serverOptions.Port.Should().Be(5678);
+    }
 }

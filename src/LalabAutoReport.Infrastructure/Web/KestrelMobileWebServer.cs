@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using LalabAutoReport.Core.Domain;
@@ -20,9 +21,14 @@ namespace LalabAutoReport.Infrastructure.Web;
 
 public class KestrelMobileWebServer : IMobileWebServer, IDisposable
 {
+    private static readonly Regex GalleryAllowedPathRegex = new(
+        @"^/api/orders/[^/]+/gallery/(requests|touch)$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private readonly IServiceProvider _serviceProvider;
     private readonly ISettingsRepository _settingsRepository;
     private readonly IMobileAuthService _authService;
+    private readonly MobileWebServerOptions _options;
     private readonly ILogger<KestrelMobileWebServer>? _logger;
 
     private WebApplication? _webApp;
@@ -43,13 +49,59 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
         IServiceProvider serviceProvider,
         ISettingsRepository settingsRepository,
         IMobileAuthService authService,
+        MobileWebServerOptions? options,
         ILogger<KestrelMobileWebServer>? logger = null)
     {
         _serviceProvider = serviceProvider;
         _settingsRepository = settingsRepository;
         _authService = authService;
+        _options = options ?? new MobileWebServerOptions();
         _logger = logger;
     }
+
+    public KestrelMobileWebServer(
+        IServiceProvider serviceProvider,
+        ISettingsRepository settingsRepository,
+        IMobileAuthService authService,
+        ILogger<KestrelMobileWebServer>? logger = null)
+        : this(serviceProvider, settingsRepository, authService, null, logger)
+    {
+    }
+
+    public static bool IsAllowedWritePath(string method, string? path)
+    {
+        if (HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method))
+        {
+            return true;
+        }
+
+        if (!HttpMethods.IsPost(method))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        var cleanPath = path;
+        int queryIndex = cleanPath.IndexOf('?');
+        if (queryIndex >= 0)
+        {
+            cleanPath = cleanPath.Substring(0, queryIndex);
+        }
+        cleanPath = cleanPath.TrimEnd('/');
+
+        if (string.Equals(cleanPath, "/api/auth/login", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return GalleryAllowedPathRegex.IsMatch(cleanPath);
+    }
+
+    public static bool IsAllowedWritePath(string? path) => IsAllowedWritePath(HttpMethods.Post, path);
 
     public MobileServerStatus GetStatus()
     {
@@ -74,14 +126,14 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
         }
 
         var settings = await _settingsRepository.GetSettingsAsync(cancellationToken);
-        if (!settings.EnableMobileServer)
+        if (!_options.LoopbackOnly && !settings.EnableMobileServer)
         {
             _logger?.LogInformation("Mobile Web Server is disabled in settings.");
             return;
         }
 
-        _port = settings.MobileServerPort > 0 ? settings.MobileServerPort : 5050;
-        _localIp = NetworkAddressHelper.GetLocalIpAddress();
+        _port = _options.Port > 0 ? _options.Port : (settings.MobileServerPort > 0 ? settings.MobileServerPort : 5050);
+        _localIp = _options.LoopbackOnly ? "127.0.0.1" : NetworkAddressHelper.GetLocalIpAddress();
         _errorMessage = null;
 
         try
@@ -89,7 +141,8 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             var builder = WebApplication.CreateBuilder();
             builder.WebHost.UseKestrel(options =>
             {
-                options.Listen(IPAddress.Any, _port);
+                var bindAddress = _options.LoopbackOnly ? IPAddress.Loopback : IPAddress.Any;
+                options.Listen(bindAddress, _port);
             });
 
             builder.Logging.ClearProviders();
@@ -152,6 +205,26 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
 
     private void ConfigureEndpoints(WebApplication app)
     {
+        if (_options.ReadOnlyMode)
+        {
+            app.Use(async (ctx, next) =>
+            {
+                if (!IsAllowedWritePath(ctx.Request.Method, ctx.Request.Path.Value))
+                {
+                    ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                    ctx.Response.ContentType = "application/json; charset=utf-8";
+                    await ctx.Response.WriteAsJsonAsync(new
+                    {
+                        code = "WRITES_DISABLED_UNTIL_PHASE2",
+                        message = "Máy chủ đang chạy ở chế độ chỉ đọc LAN Phase 1. Các thao tác ghi bị tạm khóa cho đến Phase 2."
+                    });
+                    return;
+                }
+
+                await next();
+            });
+        }
+
         // 1. Status endpoint
         app.MapGet("/api/status", async (HttpContext ctx) =>
         {

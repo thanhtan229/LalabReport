@@ -749,6 +749,7 @@ public interface IMobileWebServer
     Task StartAsync(CancellationToken cancellationToken = default);
     Task StopAsync(CancellationToken cancellationToken = default);
     bool IsRunning { get; }
+    string? LocalUrl { get; }
     MobileServerStatus GetStatus();
     event EventHandler? StatusChanged;
 }

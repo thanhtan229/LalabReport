@@ -67,7 +67,10 @@ public class Program
                 options.DataDirectory = dataDir;
                 options.ThumbnailsDirectory = Path.Combine(dataDir, "Thumbnails");
                 options.EnableCloudSync = false;
-                options.EnableMobileWebServer = false;
+                options.EnableMobileWebServer = true;
+                options.MobileWebServerLoopbackOnly = true;
+                options.MobileWebServerReadOnlyMode = true;
+                options.MobileWebServerPort = cliOptions.Port;
             });
 
             using var serviceProvider = services.BuildServiceProvider();
@@ -108,7 +111,19 @@ public class Program
                 return 0;
             }
 
-            // 7. Health Info Provider setup
+            // 7. Start Mobile Web Server (Read-only, Loopback-only)
+            var mobileServer = serviceProvider.GetRequiredService<IMobileWebServer>();
+            await mobileServer.StartAsync();
+            if (mobileServer.IsRunning)
+            {
+                Log.Information("Mobile Web Server (Read-Only Loopback) đã khởi động: {Url}", mobileServer.LocalUrl);
+            }
+            else
+            {
+                Log.Warning("Mobile Web Server không thể khởi động: {Error}", mobileServer.GetStatus().ErrorMessage);
+            }
+
+            // 8. Health Info Provider setup
             Func<int> schemaVersionProvider = () =>
             {
                 try
@@ -129,7 +144,7 @@ public class Program
                 schemaVersionProvider: schemaVersionProvider,
                 isReadyProvider: () => isReady && guard.IsAcquired);
 
-            // 8. Start Loopback Health Endpoints with Minimal WebApplication
+            // 9. Start Loopback Health Endpoints with Minimal WebApplication
             var builder = WebApplication.CreateBuilder();
             builder.Logging.ClearProviders();
             builder.Services.AddLogging(b => b.AddSerilog(Log.Logger, dispose: true));
@@ -158,12 +173,28 @@ public class Program
             app.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopping.Register(() =>
             {
                 Log.Information("Nhận tín hiệu dừng Server...");
+                try
+                {
+                    mobileServer.StopAsync().GetAwaiter().GetResult();
+                    Log.Information("Mobile Web Server đã dừng.");
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Lỗi khi dừng Mobile Web Server.");
+                }
             });
 
             // Map singleton for endpoint injection
             app.MapGet("/", () => Results.Text("Lalab Auto Report Server"));
 
             await app.RunAsync();
+
+            try
+            {
+                await mobileServer.StopAsync();
+            }
+            catch { }
+
             return 0;
         }
         catch (Exception ex)
@@ -196,6 +227,18 @@ public class Program
                 else
                 {
                     error = "Thiếu đường dẫn sau tham số --data-dir";
+                    return false;
+                }
+            }
+            else if (string.Equals(arg, "--port", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 < args.Length && int.TryParse(args[++i], out int port) && port >= 0 && port <= 65535)
+                {
+                    options.Port = port;
+                }
+                else
+                {
+                    error = "Giá trị cổng sau --port không hợp lệ (phải từ 0 đến 65535)";
                     return false;
                 }
             }
@@ -244,6 +287,7 @@ Cách sử dụng:
 
 Tùy chọn:
   --data-dir <path>     Đường dẫn thư mục dữ liệu server (Mặc định: %ProgramData%\LalabAutoReport\Server)
+  --port <port>         Cổng HTTP cho Mobile Web Server (0 = lấy từ Cài đặt, mặc định: 0)
   --health-port <port>  Cổng HTTP loopback cho health check (Mặc định: 5099)
 ");
     }
@@ -254,6 +298,8 @@ Tùy chọn:
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "LalabAutoReport",
             "Server");
+
+        public int Port { get; set; } = 0;
 
         public int HealthPort { get; set; } = 5099;
 
