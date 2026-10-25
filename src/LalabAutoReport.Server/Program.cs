@@ -1,9 +1,11 @@
 using System;
 using System.IO;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Media.Imaging;
 using Dapper;
 using LalabAutoReport.Core.Interfaces;
 using LalabAutoReport.Infrastructure.Composition;
@@ -109,6 +111,117 @@ public class Program
                 Console.WriteLine(jsonOutput);
                 Log.Information("Hoàn tất kiểm kê inventory dry-run.");
                 return 0;
+            }
+
+            // 6.1 Check for subcommand: render-spike --bill-id <id> --out <dir>
+            if (cliOptions.IsRenderSpike)
+            {
+                Log.Information("Thực thi render-spike cho Bill ID {BillId}, thư mục xuất: {OutDir}",
+                    cliOptions.RenderSpikeBillId, cliOptions.RenderSpikeOutDir);
+                try
+                {
+                    var billRepo = serviceProvider.GetRequiredService<ICustomerBillRepository>();
+                    var jpegExporter = serviceProvider.GetRequiredService<IJpegBillExporter>();
+                    var labelExporter = serviceProvider.GetRequiredService<IShippingLabelExporter>();
+
+                    var bill = await billRepo.GetByIdAsync(cliOptions.RenderSpikeBillId!.Value);
+                    if (bill == null)
+                    {
+                        string notFoundMsg = $"Không tìm thấy hóa đơn với ID = {cliOptions.RenderSpikeBillId.Value}";
+                        Console.Error.WriteLine(notFoundMsg);
+                        Log.Error(notFoundMsg);
+                        return 6;
+                    }
+
+                    Directory.CreateDirectory(cliOptions.RenderSpikeOutDir!);
+
+                    string jpegPath = await jpegExporter.ExportBillToJpegAsync(bill, cliOptions.RenderSpikeOutDir!);
+                    string labelPath = await labelExporter.ExportShippingLabelImageAsync(bill, cliOptions.RenderSpikeOutDir!);
+
+                    if (!File.Exists(jpegPath))
+                    {
+                        throw new FileNotFoundException("Tập tin JPEG xuất ra không tồn tại", jpegPath);
+                    }
+
+                    if (!File.Exists(labelPath))
+                    {
+                        throw new FileNotFoundException("Tập tin tem nhãn xuất ra không tồn tại", labelPath);
+                    }
+
+                    long jpegBytes = new FileInfo(jpegPath).Length;
+                    string jpegSha256;
+                    using (var sha = SHA256.Create())
+                    using (var stream = File.OpenRead(jpegPath))
+                    {
+                        jpegSha256 = Convert.ToHexString(sha.ComputeHash(stream)).ToLowerInvariant();
+                    }
+
+                    int jpegWidth;
+                    int jpegHeight;
+                    using (var stream = File.OpenRead(jpegPath))
+                    {
+                        var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.None, BitmapCacheOption.None);
+                        var frame = decoder.Frames[0];
+                        jpegWidth = frame.PixelWidth;
+                        jpegHeight = frame.PixelHeight;
+                    }
+
+                    long labelBytes = new FileInfo(labelPath).Length;
+                    string labelSha256;
+                    using (var sha = SHA256.Create())
+                    using (var stream = File.OpenRead(labelPath))
+                    {
+                        labelSha256 = Convert.ToHexString(sha.ComputeHash(stream)).ToLowerInvariant();
+                    }
+
+                    int labelWidth;
+                    int labelHeight;
+                    using (var stream = File.OpenRead(labelPath))
+                    {
+                        var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.None, BitmapCacheOption.None);
+                        var frame = decoder.Frames[0];
+                        labelWidth = frame.PixelWidth;
+                        labelHeight = frame.PixelHeight;
+                    }
+
+                    int processId = Environment.ProcessId;
+                    int sessionId = System.Diagnostics.Process.GetCurrentProcess().SessionId;
+                    string buildId = new ServerHealthInfoProvider(dataDir).BuildId;
+
+                    var spikeResult = new
+                    {
+                        billId = bill.Id,
+                        jpegPath = Path.GetFullPath(jpegPath),
+                        jpegSha256 = jpegSha256,
+                        jpegBytes = jpegBytes,
+                        jpegWidth = jpegWidth,
+                        jpegHeight = jpegHeight,
+                        labelPath = Path.GetFullPath(labelPath),
+                        labelSha256 = labelSha256,
+                        labelBytes = labelBytes,
+                        labelWidth = labelWidth,
+                        labelHeight = labelHeight,
+                        processId = processId,
+                        sessionId = sessionId,
+                        buildId = buildId
+                    };
+
+                    string jsonOutput = JsonSerializer.Serialize(spikeResult, new JsonSerializerOptions
+                    {
+                        WriteIndented = true
+                    });
+
+                    Console.WriteLine(jsonOutput);
+                    Log.Information("Hoàn tất render-spike thành công cho Bill ID {BillId}.", bill.Id);
+                    return 0;
+                }
+                catch (Exception ex)
+                {
+                    string errorMsg = $"[LỖI RENDER SPIKE] {ex.GetType().Name}: {ex.Message}{Environment.NewLine}{ex.StackTrace}";
+                    Console.Error.WriteLine(errorMsg);
+                    Log.Error(ex, "Lỗi khi thực thi render-spike");
+                    return 6;
+                }
             }
 
             // 7. Start Mobile Web Server (Read-only, Loopback-only)
@@ -267,11 +380,65 @@ public class Program
                     return false;
                 }
             }
+            else if (string.Equals(arg, "render-spike", StringComparison.OrdinalIgnoreCase))
+            {
+                options.IsRenderSpike = true;
+            }
+            else if (string.Equals(arg, "--bill-id", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 < args.Length && long.TryParse(args[++i], out long billId) && billId > 0)
+                {
+                    options.RenderSpikeBillId = billId;
+                }
+                else
+                {
+                    error = "Giá trị sau --bill-id phải là số nguyên dương hợp lệ";
+                    return false;
+                }
+            }
+            else if (string.Equals(arg, "--out", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 < args.Length && !string.IsNullOrWhiteSpace(args[i + 1]))
+                {
+                    options.RenderSpikeOutDir = Path.GetFullPath(args[++i]);
+                }
+                else
+                {
+                    error = "Thiếu đường dẫn thư mục sau tham số --out";
+                    return false;
+                }
+            }
             else
             {
                 error = $"Không nhận diện được tham số: {arg}";
                 return false;
             }
+        }
+
+        if (options.IsRenderSpike)
+        {
+            if (options.IsInventoryDryRun)
+            {
+                error = "Không thể kết hợp lệnh 'render-spike' và 'inventory --dry-run'";
+                return false;
+            }
+
+            if (!options.RenderSpikeBillId.HasValue)
+            {
+                error = "Lệnh 'render-spike' bắt buộc phải kèm tham số '--bill-id <id>'";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(options.RenderSpikeOutDir))
+            {
+                error = "Lệnh 'render-spike' bắt buộc phải kèm tham số '--out <dir>'";
+                return false;
+            }
+        }
+        else if (options.RenderSpikeBillId.HasValue || !string.IsNullOrWhiteSpace(options.RenderSpikeOutDir))
+        {
+            error = "Tham số '--bill-id' và '--out' chỉ được sử dụng cho lệnh 'render-spike'";
+            return false;
         }
 
         return true;
@@ -284,11 +451,14 @@ Lalab Auto Report Server
 Cách sử dụng:
   LalabAutoReport.Server [options]
   LalabAutoReport.Server inventory --dry-run [options]
+  LalabAutoReport.Server render-spike --bill-id <id> --out <dir> [options]
 
 Tùy chọn:
   --data-dir <path>     Đường dẫn thư mục dữ liệu server (Mặc định: %ProgramData%\LalabAutoReport\Server)
   --port <port>         Cổng HTTP cho Mobile Web Server (0 = lấy từ Cài đặt, mặc định: 0)
   --health-port <port>  Cổng HTTP loopback cho health check (Mặc định: 5099)
+  --bill-id <id>        ID hóa đơn cần xuất (dùng cho render-spike)
+  --out <dir>           Thư mục đích lưu ảnh JPEG và nhãn in (dùng cho render-spike)
 ");
     }
 
@@ -304,5 +474,11 @@ Tùy chọn:
         public int HealthPort { get; set; } = 5099;
 
         public bool IsInventoryDryRun { get; set; }
+
+        public bool IsRenderSpike { get; set; }
+
+        public long? RenderSpikeBillId { get; set; }
+
+        public string? RenderSpikeOutDir { get; set; }
     }
 }
