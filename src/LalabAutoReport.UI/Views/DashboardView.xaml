@@ -305,6 +305,7 @@
                                             <!-- Order Actions -->
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                                 <Button Content="Mở thư mục" Height="30" Padding="12,0" Margin="0,0,6,0" Style="{StaticResource Tinix.Button.Secondary}" Click="OpenOrderFolder_Click"/>
+                                                <Button Content="🖼️ Xem ảnh" Height="30" Padding="10,0" Margin="0,0,6,0" Style="{StaticResource Tinix.Button.Secondary}" Click="OpenOrderGallery_Click" ToolTip="Mở thư viện xem toàn bộ ảnh in của đơn hàng"/>
                                                 <Button Content="🗑 Xóa" Height="30" Padding="10,0" Margin="0,0,6,0" Style="{StaticResource Tinix.Button.Secondary}" Click="DeleteOrder_Click"
                                                         ToolTip="{Binding DeleteOrderTooltip}"
                                                         IsEnabled="{Binding CanDelete}"/>

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using System.Windows.Media.Imaging;
 using FluentAssertions;
 using LalabAutoReport.Core.Domain;
 using LalabAutoReport.Infrastructure.Data;
@@ -311,5 +312,169 @@ public class ShippingLabelTests : IDisposable
         new FileInfo(imagePath).Length.Should().BeGreaterThan(1000);
         Path.GetExtension(imagePath).Should().Be(".png");
     }
+
+    [Fact]
+    public async Task ThermalLabelSize_CanBeSavedAndRetrieved_WithDefault40x100()
+    {
+        var settings = await _settingsRepo.GetSettingsAsync();
+        settings.ThermalLabelSize.Should().Be(ThermalLabelSizes.Size40x100);
+
+        settings.ThermalLabelSize = ThermalLabelSizes.Size75x100;
+        await _settingsRepo.SaveSettingsAsync(settings);
+
+        var loaded = await _settingsRepo.GetSettingsAsync();
+        loaded.ThermalLabelSize.Should().Be(ThermalLabelSizes.Size75x100);
+    }
+
+    [Fact]
+    public async Task WpfShippingLabelExporter_ExportsBoth40x100And75x100_WithExactDimensions()
+    {
+        var bill = new CustomerBill
+        {
+            BillNumber = "BILL-DIM-TEST",
+            CustomerNameSnapshot = "Studio Test Dim",
+            PhoneSnapshot = "0900000000",
+            ShippingAddressSnapshot = "Hà Nội",
+            GrandTotal = 200000,
+            IsPaid = false
+        };
+
+        var exporter = new WpfShippingLabelExporter(_settingsRepo);
+        string exportDir = Path.Combine(_tempRoot, "DimTest");
+
+        // 1. Export 40x100mm (Default)
+        var settings = await _settingsRepo.GetSettingsAsync();
+        settings.ThermalLabelSize = ThermalLabelSizes.Size40x100;
+        await _settingsRepo.SaveSettingsAsync(settings);
+
+        string path40x100 = await exporter.ExportShippingLabelImageAsync(bill, exportDir);
+        File.Exists(path40x100).Should().BeTrue();
+
+        using (var fs = new FileStream(path40x100, FileMode.Open, FileAccess.Read))
+        {
+            var decoder = BitmapDecoder.Create(fs, BitmapCreateOptions.None, BitmapCacheOption.None);
+            var frame = decoder.Frames[0];
+            frame.PixelWidth.Should().Be(800);
+            frame.PixelHeight.Should().Be(480);
+        }
+
+        // 2. Export 75x100mm
+        settings.ThermalLabelSize = ThermalLabelSizes.Size75x100;
+        await _settingsRepo.SaveSettingsAsync(settings);
+
+        string path75x100 = await exporter.ExportShippingLabelImageAsync(bill, exportDir);
+        File.Exists(path75x100).Should().BeTrue();
+
+        using (var fs = new FileStream(path75x100, FileMode.Open, FileAccess.Read))
+        {
+            var decoder = BitmapDecoder.Create(fs, BitmapCreateOptions.None, BitmapCacheOption.None);
+            var frame = decoder.Frames[0];
+            frame.PixelWidth.Should().Be(600);
+            frame.PixelHeight.Should().Be(800);
+        }
+    }
+
+    [Fact]
+    public async Task WpfShippingLabelExporter_LongDataAndNoAddress_RendersSafelyWithoutOverflow()
+    {
+        // Test edge cases: empty address (no duplicate "Địa chỉ: Địa chỉ:"), very long name, 8 items, long note
+        var bill = new CustomerBill
+        {
+            BillNumber = "BILL-LONG-TEST-9999",
+            CustomerNameSnapshot = "Studio Tiệc Cưới và Sự Kiện Nghệ Thuật Hoàng Gia Luxury VIP Hà Nội Sài Gòn",
+            PhoneSnapshot = "0988.777.666",
+            ShippingAddressSnapshot = null, // empty address test
+            GrandTotal = 158500000, // 158.5M COD to test large amount auto-shrinking font
+            IsPaid = false,
+            Note = "Lưu ý đặc biệt quan trọng: Hàng tranh tráng gương kích thước lớn rất dễ vỡ. Yêu cầu bọc 3 lớp xốp khí cẩn thận, giao buổi sáng trước 11h30 và gọi điện cho quản lý studio trước khi tới 30 phút."
+        };
+
+        var order = new CustomerBillOrder
+        {
+            OrderId = 1,
+            OrderNameSnapshot = "Đơn in triển lãm ảnh cưới",
+            IsIncluded = true
+        };
+
+        for (int i = 1; i <= 8; i++)
+        {
+            order.Lines.Add(new CustomerBillLine
+            {
+                ProductNameSnapshot = $"Ảnh cổng tráng gương pha lê cao cấp mẫu số {i}",
+                VariantSnapshot = $"{50 + i * 5}x{70 + i * 5}",
+                BilledQuantity = i,
+                BilledUnitPrice = 150000,
+                LineTotal = i * 150000,
+                IsIncluded = true
+            });
+        }
+        bill.Orders.Add(order);
+
+        var settings = await _settingsRepo.GetSettingsAsync();
+        settings.ThermalLabelSize = ThermalLabelSizes.Size40x100;
+        settings.WorkshopName = "XƯỞNG IN TRANH ẢNH NGHỆ THUẬT CAO CẤP CHUYÊN NGHIỆP LALAB VIỆT NAM";
+        settings.WorkshopPhone = "0909.123.456";
+        settings.WorkshopAddress = "Tòa Nhà Công Nghệ Số 123 Đường Cầu Giấy, Phường Quan Hoa, Quận Cầu Giấy, Hà Nội";
+        await _settingsRepo.SaveSettingsAsync(settings);
+
+        var exporter = new WpfShippingLabelExporter(_settingsRepo);
+        string exportDir = Path.Combine(_tempRoot, "StressTest");
+
+        string labelPath = await exporter.ExportShippingLabelImageAsync(bill, exportDir);
+        File.Exists(labelPath).Should().BeTrue();
+
+        using (var fs = new FileStream(labelPath, FileMode.Open, FileAccess.Read))
+        {
+            var decoder = BitmapDecoder.Create(fs, BitmapCreateOptions.None, BitmapCacheOption.None);
+            var frame = decoder.Frames[0];
+            frame.PixelWidth.Should().Be(800);
+            frame.PixelHeight.Should().Be(480);
+        }
+
+        // Test Order Label with Note
+        var testOrder = new Order
+        {
+            Id = 99,
+            OrderCode = "ORD-TEST-99",
+            Customer = new Customer { CanonicalName = "Khách Hàng Không Có Địa Chỉ", Phone = "0911223344", Address = null },
+            Note = "Ghi chú đóng gói: kiểm đếm kỹ 10 tấm trước khi đóng thùng"
+        };
+        string orderLabelPath = await exporter.ExportOrderShippingLabelImageAsync(testOrder, exportDir);
+        File.Exists(orderLabelPath).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task WpfShippingLabelExporter_WhenTargetFileHasUserMappedSectionOpen_FallsBackWithoutThrowing()
+    {
+        var bill = new CustomerBill
+        {
+            BillNumber = "BILL-20261001-0022",
+            CustomerNameSnapshot = "Chị Lan thêm",
+            PhoneSnapshot = "0912345678",
+            ShippingAddressSnapshot = "Hà Nội",
+            GrandTotal = 500000,
+            IsPaid = false
+        };
+
+        var exporter = new WpfShippingLabelExporter(_settingsRepo);
+        string exportDir = Path.Combine(_tempRoot, "MappedLockTest");
+
+        // 1. First export creates the deterministic file
+        string firstPath = await exporter.ExportShippingLabelImageAsync(bill, exportDir);
+        File.Exists(firstPath).Should().BeTrue();
+
+        // 2. Simulate an external process (Windows Photos / WIC decoder) holding a memory-mapped section open on firstPath
+        using var fs = new FileStream(firstPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var mmf = System.IO.MemoryMappedFiles.MemoryMappedFile.CreateFromFile(
+            fs, null, 0, System.IO.MemoryMappedFiles.MemoryMappedFileAccess.Read, HandleInheritability.None, leaveOpen: false);
+        using var accessor = mmf.CreateViewAccessor(0, 0, System.IO.MemoryMappedFiles.MemoryMappedFileAccess.Read);
+
+        // 3. Second export while memory-mapped section is open must succeed via fallback file
+        string secondPath = await exporter.ExportShippingLabelImageAsync(bill, exportDir);
+        File.Exists(secondPath).Should().BeTrue();
+        secondPath.Should().NotBe(firstPath);
+        new FileInfo(secondPath).Length.Should().BeGreaterThan(1000);
+    }
 }
+
 

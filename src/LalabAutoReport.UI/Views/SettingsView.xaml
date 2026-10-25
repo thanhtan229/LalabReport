@@ -324,9 +324,21 @@
                             <TextBlock Text="Tự động hiển thị ảnh đầu tiên của đơn hàng trên thẻ đơn để thợ nhận diện trực quan nhanh chóng. Bấm vào ảnh nhỏ để mở xem ảnh gốc với trình xem của Windows." Foreground="{StaticResource Tinix.Color.Text.Secondary}" FontSize="12" Margin="0,0,0,14" TextWrapping="Wrap"/>
 
                             <!-- Enable Thumbnails Checkbox -->
-                            <CheckBox Content="Hiển thị ảnh thu nhỏ (thumbnail) ở đầu mỗi thẻ đơn hàng (Khuyên dùng)" IsChecked="{Binding ShowOrderThumbnails}" FontWeight="SemiBold" Margin="0,0,0,14" FontSize="13"/>
+                            <CheckBox Content="Hiển thị ảnh thu nhỏ (thumbnail) ở đầu mỗi thẻ đơn hàng (Khuyên dùng)" IsChecked="{Binding ShowOrderThumbnails}" FontWeight="SemiBold" Margin="0,0,0,10" FontSize="13"/>
 
-                            <!-- Cache details and Clear button -->
+                            <!-- Auto Cleanup Checkbox & Retention Policy -->
+                            <CheckBox Content="Tự động dọn dẹp định kỳ các ảnh thumbnail không còn sử dụng" IsChecked="{Binding EnableThumbnailAutoCleanup}" Margin="0,0,0,10" FontSize="13"/>
+
+                            <StackPanel Orientation="Horizontal" Margin="24,0,0,14" IsEnabled="{Binding EnableThumbnailAutoCleanup}">
+                                <TextBlock Text="Thời hạn lưu giữ (Retention):" FontSize="12" Foreground="{StaticResource Tinix.Color.Text.Secondary}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <ComboBox Width="240" Height="30" 
+                                          ItemsSource="{Binding RetentionOptions}" 
+                                          SelectedValuePath="Days" 
+                                          DisplayMemberPath="DisplayName" 
+                                          SelectedValue="{Binding ThumbnailRetentionDays}"/>
+                            </StackPanel>
+
+                            <!-- Cache details and Action buttons -->
                             <Border Background="{StaticResource Tinix.Color.Bg.Surface}" BorderBrush="{StaticResource Tinix.Color.Border.Subtle}" BorderThickness="1" CornerRadius="{StaticResource Tinix.Radius.Sm}" Padding="14">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -335,12 +347,15 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel VerticalAlignment="Center">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                            <TextBlock Text="Dung lượng bộ nhớ đệm (Disk Cache): " FontSize="12" Foreground="{StaticResource Tinix.Color.Text.Secondary}"/>
+                                            <TextBlock Text="Dung lượng bộ nhớ đệm PC: " FontSize="12" Foreground="{StaticResource Tinix.Color.Text.Secondary}"/>
                                             <TextBlock Text="{Binding ThumbnailCacheSizeText}" FontWeight="Bold" FontSize="12" Foreground="{StaticResource Tinix.Color.Primary}"/>
                                         </StackPanel>
-                                        <TextBlock Text="Lưu trong thư mục %LocalAppData% và tự động dọn dẹp các thumbnail không dùng quá 30 ngày." FontSize="11" Foreground="{StaticResource Tinix.Color.Text.Muted}"/>
+                                        <TextBlock Text="Lưu trong thư mục %LocalAppData% và quản lý vòng đời dựa trên thời điểm xem gần nhất." FontSize="11" Foreground="{StaticResource Tinix.Color.Text.Muted}"/>
                                     </StackPanel>
-                                    <Button Grid.Column="1" Command="{Binding ClearThumbnailCacheCommand}" Content="🧹 Xóa Bộ Nhớ Đệm Thumbnail" Style="{StaticResource Tinix.Button.Secondary}" Height="34" Padding="14,0" VerticalAlignment="Center"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button Command="{Binding CleanupExpiredThumbnailsNowCommand}" Content="🧹 Dọn Quá Hạn Ngay" Style="{StaticResource Tinix.Button.Secondary}" Height="34" Padding="12,0" Margin="0,0,8,0" ToolTip="Xóa ngay các file thumbnail đã quá số ngày quy định mà không được xem"/>
+                                        <Button Command="{Binding ClearThumbnailCacheCommand}" Content="⚠️ Xóa Toàn Bộ" Style="{StaticResource Tinix.Button.Danger}" Height="34" Padding="12,0" ToolTip="Xóa toàn bộ ảnh thumbnail đã cache"/>
+                                    </StackPanel>
                                 </Grid>
                             </Border>
 
@@ -498,7 +513,7 @@
                                 <StackPanel VerticalAlignment="Center">
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                                         <TextBlock Text="🏷️" FontSize="16" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                        <TextBlock Text="Máy In Nhiệt Tem Bưu Kiện / Giao Hàng (Khổ Chuẩn 75x100mm)" FontSize="14" FontWeight="Bold" Foreground="{StaticResource Tinix.Color.Text.Primary}" VerticalAlignment="Center"/>
+                                        <TextBlock Text="Máy In Nhiệt Tem Bưu Kiện / Giao Hàng (Khổ 40x100mm / 75x100mm)" FontSize="14" FontWeight="Bold" Foreground="{StaticResource Tinix.Color.Text.Primary}" VerticalAlignment="Center"/>
                                     </StackPanel>
                                     <TextBlock Text="Cấu hình máy in nhiệt để in ngầm trực tiếp (Silent Print) từ máy tính hoặc bấm in tức thì qua điện thoại nhân viên đóng gói." Foreground="{StaticResource Tinix.Color.Text.Secondary}" FontSize="12" TextWrapping="Wrap"/>
                                 </StackPanel>
@@ -508,9 +523,9 @@
                                 </StackPanel>
                             </Grid>
 
-                            <Grid Margin="0,4,0,10">
+                            <Grid Margin="0,4,0,14">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="1.5*"/>
+                                    <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="16"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
@@ -522,12 +537,19 @@
                                     <TextBlock Text="Hỗ trợ các máy in nhiệt USB như Xprinter XP-420B, XP-350B, HPRT, Shoptida... In ngầm không hiện popup xác nhận." FontSize="11" Foreground="{StaticResource Tinix.Color.Text.Muted}" Margin="0,4,0,0"/>
                                 </StackPanel>
 
-                                <!-- Tự động đánh dấu đã giao -->
-                                <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                                    <CheckBox IsChecked="{Binding AutoMarkDeliveredOnPrint}" Content="Tự động đánh dấu ĐÃ GIAO khi in tem" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource Tinix.Color.Text.Primary}"/>
-                                    <TextBlock Text="Khi nhân viên bấm in tem trên điện thoại hoặc PC, hệ thống tự động đổi trạng thái đơn sang 'Đã giao' và ghi nhận thời gian." FontSize="11" Foreground="{StaticResource Tinix.Color.Text.Muted}" Margin="20,4,0,0" TextWrapping="Wrap"/>
+                                <!-- Chọn khổ giấy tem in -->
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="Khổ giấy tem in nhiệt:" FontSize="12" Foreground="{StaticResource Tinix.Color.Text.Secondary}" Margin="0,0,0,6"/>
+                                    <ComboBox ItemsSource="{Binding AvailableThermalLabelSizes}" SelectedItem="{Binding SelectedThermalLabelSize}" Height="36" FontSize="13" VerticalContentAlignment="Center"/>
+                                    <TextBlock Text="Khổ 40x100mm (Ngang) tối ưu 2 cột, không mã QR. Khổ 75x100mm (Dọc) có mã QR." FontSize="11" Foreground="{StaticResource Tinix.Color.Text.Muted}" Margin="0,4,0,0"/>
                                 </StackPanel>
                             </Grid>
+
+                            <!-- Tự động đánh dấu đã giao -->
+                            <StackPanel Margin="0,0,0,10">
+                                <CheckBox IsChecked="{Binding AutoMarkDeliveredOnPrint}" Content="Tự động đánh dấu ĐÃ GIAO khi in tem" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource Tinix.Color.Text.Primary}"/>
+                                <TextBlock Text="Khi nhân viên bấm in tem trên điện thoại hoặc PC, hệ thống tự động đổi trạng thái đơn sang 'Đã giao' và ghi nhận thời gian." FontSize="11" Foreground="{StaticResource Tinix.Color.Text.Muted}" Margin="20,4,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
 
                             <!-- Thông báo in thử -->
                             <TextBlock Text="{Binding TestPrintStatusMessage}" Foreground="{StaticResource Tinix.Color.Info}" FontWeight="SemiBold" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap"/>

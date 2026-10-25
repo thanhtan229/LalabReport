@@ -1175,11 +1175,11 @@ public class CustomerBillingTests : IDisposable
         string exportedPath = await _jpegExporter.ExportBillToJpegAsync(locked);
         await _customerBillingService.RecordBillExportedAsync(locked.Id, exportedPath);
 
-        // 3. Open locked/exported bill in ViewModel (no changes -> MỞ XEM BILL)
+        // 3. Open locked/exported bill in ViewModel (no changes -> XEM BILL)
         var vmExported = new CustomerBillReviewViewModel(locked, _customerBillingService, _jpegExporter, null, null, null, _settingsRepo);
         vmExported.CanViewExportedBill.Should().BeTrue();
         vmExported.IsOpenOnlyState.Should().BeTrue();
-        vmExported.ExportButtonText.Should().Be("MỞ XEM BILL");
+        vmExported.ExportButtonText.Should().Be("XEM BILL");
         vmExported.ExportButtonIcon.Should().Be("🖼️ ");
         vmExported.ViewBillToolTip.Should().ContainEquivalentOf("mở xem");
 
@@ -1190,11 +1190,11 @@ public class CustomerBillingTests : IDisposable
         vmExported.ExportButtonText.Should().Be("XUẤT LẠI BILL");
         vmExported.ExportButtonIcon.Should().Be("⚡ ");
 
-        // 3c. Revert quantity back to 5 -> transitions back to MỞ XEM BILL
+        // 3c. Revert quantity back to 5 -> transitions back to XEM BILL
         vmExported.Orders[0].Lines[0].BilledQuantity = 5;
         vmExported.HasChanges.Should().BeFalse();
         vmExported.IsOpenOnlyState.Should().BeTrue();
-        vmExported.ExportButtonText.Should().Be("MỞ XEM BILL");
+        vmExported.ExportButtonText.Should().Be("XEM BILL");
 
         // 4. Test fallback resolution: simulate old bill without export_file_path in DB, but JPEG exists on disk
         locked.ExportFilePath = null;
@@ -1582,7 +1582,7 @@ public class CustomerBillingTests : IDisposable
             return Task.CompletedTask;
         }
 
-        public Task PrintTestSampleLabelAsync(string? printerName = null, CancellationToken cancellationToken = default)
+        public Task PrintTestSampleLabelAsync(string? printerName = null, string? labelSizeOverride = null, CancellationToken cancellationToken = default)
         {
             return Task.CompletedTask;
         }
@@ -1608,7 +1608,7 @@ public class CustomerBillingTests : IDisposable
         vm.CustomFileOpener = _ => { };
         vm.CustomPreviewOpener = (_, _) => { };
         vm.IsOpenOnlyState.Should().BeTrue();
-        vm.ExportButtonText.Should().Be("MỞ XEM BILL");
+        vm.ExportButtonText.Should().Be("XEM BILL");
 
         // 1. Calling ExportBillAsync when no changes -> should NOT re-export
         await vm.ExportBillCommand.ExecuteAsync(null);
@@ -1631,7 +1631,7 @@ public class CustomerBillingTests : IDisposable
         vm.Bill.Lines[0].BilledQuantity.Should().Be(4);
         vm.IsEditable.Should().BeFalse();
         vm.IsOpenOnlyState.Should().BeTrue();
-        vm.ExportButtonText.Should().Be("MỞ XEM BILL");
+        vm.ExportButtonText.Should().Be("XEM BILL");
     }
 
     [Fact]

@@ -326,15 +326,49 @@ public partial class App : Application
                 Log.Warning(ex, "Failed to resolve IMobileWebServer on startup.");
             }
 
-            // 8.3 Auto cleanup expired thumbnail cache (>30 days) in background
+            // 8.3 Cleanup Expired Thumbnail Cache in background (Policy-based: 30/60/90 days, max once per 24h)
             try
             {
                 var thumbnailService = _serviceProvider.GetRequiredService<IThumbnailService>();
-                _ = Task.Run(() =>
+                var settingsRepo = _serviceProvider.GetRequiredService<ISettingsRepository>();
+                _ = Task.Run(async () =>
                 {
                     try
                     {
-                        thumbnailService.CleanupExpiredDiskCache(TimeSpan.FromDays(30));
+                        var settings = await settingsRepo.GetSettingsAsync();
+                        if (settings.EnableThumbnailAutoCleanup)
+                        {
+                            bool shouldSweep = true;
+                            if (!string.IsNullOrWhiteSpace(settings.LastThumbnailCleanupAt) &&
+                                DateTimeOffset.TryParse(settings.LastThumbnailCleanupAt, out var lastSweep))
+                            {
+                                if (DateTimeOffset.UtcNow - lastSweep < TimeSpan.FromHours(24))
+                                {
+                                    shouldSweep = false;
+                                }
+                            }
+
+                            if (shouldSweep)
+                            {
+                                int days = (settings.ThumbnailRetentionDays == 30 || settings.ThumbnailRetentionDays == 90) ? settings.ThumbnailRetentionDays : 60;
+                                await thumbnailService.CleanupExpiredDiskCacheAsync(TimeSpan.FromDays(days));
+                                if (settings.EnableCloudSync)
+                                {
+                                    try
+                                    {
+                                        var cloudSync = _serviceProvider.GetService<ICloudSyncService>();
+                                        if (cloudSync != null)
+                                        {
+                                            await cloudSync.CleanupCloudGalleryCacheAsync(days, clearAll: false);
+                                        }
+                                    }
+                                    catch { }
+                                }
+                                settings.LastThumbnailCleanupAt = DateTimeOffset.UtcNow.ToString("o");
+                                await settingsRepo.SaveSettingsAsync(settings);
+                                Log.Information("Automatic thumbnail cleanup sweep completed (retention {Days} days).", days);
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -344,7 +378,7 @@ public partial class App : Application
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "Failed to resolve IThumbnailService on startup.");
+                Log.Warning(ex, "Failed to initialize thumbnail cleanup on startup.");
             }
 
             // 8.4 Initial Cloud Sync in background (non-blocking)
@@ -542,8 +576,20 @@ public partial class App : Application
         services.AddSingleton<IShippingLabelExporter, LalabAutoReport.Infrastructure.Reporting.WpfShippingLabelExporter>();
         services.AddSingleton<IMobileAuthService, MobileAuthService>();
         services.AddSingleton<IMobileWebServer, KestrelMobileWebServer>();
-        if (_isolatedDataDirectory == null) services.AddSingleton<IThumbnailService, LalabAutoReport.Infrastructure.Services.ThumbnailService>();
-        else services.AddSingleton<IThumbnailService>(sp => new ThumbnailService(sp.GetRequiredService<IFileSystemAdapter>(), Path.Combine(_isolatedDataDirectory, "Thumbnails")));
+        services.AddSingleton<IThumbnailCacheRepository, SqliteThumbnailCacheRepository>();
+        if (_isolatedDataDirectory == null)
+        {
+            services.AddSingleton<IThumbnailService, LalabAutoReport.Infrastructure.Services.ThumbnailService>();
+        }
+        else
+        {
+            services.AddSingleton<IThumbnailService>(sp => new ThumbnailService(
+                sp.GetRequiredService<IFileSystemAdapter>(),
+                Path.Combine(_isolatedDataDirectory, "Thumbnails"),
+                sp.GetService<IThumbnailCacheRepository>(),
+                sp.GetService<Microsoft.Extensions.Logging.ILogger<ThumbnailService>>()));
+        }
+        services.AddSingleton<IOrderGalleryService, OrderGalleryService>();
         services.AddSingleton<ISystemTrayManager, SystemTrayManager>();
         services.AddSingleton<ICloudMediaSyncService, LalabAutoReport.Infrastructure.Services.CloudMediaSyncService>();
         services.AddSingleton<ICloudSyncService, LalabAutoReport.Infrastructure.Services.CloudSyncService>();

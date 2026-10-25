@@ -30,6 +30,8 @@ public interface ICloudSyncService
     Task<int> PullRemoteChangesAsync(CancellationToken cancellationToken = default);
     Task<bool> SendHeartbeatAsync(CancellationToken cancellationToken = default);
     Task<int> ProcessPendingPrintCommandsAsync(CancellationToken cancellationToken = default);
+    Task<int> ProcessPendingGalleryJobsAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
+    Task<bool> CleanupCloudGalleryCacheAsync(int retentionDays, bool clearAll = false, CancellationToken cancellationToken = default) => Task.FromResult(false);
     Task ExportReconciliationReportAsync(string path, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     Task ApplyReviewedReconciliationAsync(string path, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }

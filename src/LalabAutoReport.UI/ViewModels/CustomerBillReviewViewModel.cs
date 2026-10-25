@@ -112,7 +112,7 @@ public partial class CustomerBillReviewViewModel : ObservableObject
     {
         get
         {
-            if (IsOpenOnlyState) return "MỞ XEM BILL";
+            if (IsOpenOnlyState) return "XEM BILL";
             if (CanViewExportedBill && HasChanges) return "XUẤT LẠI BILL";
             return "XUẤT BILL";
         }
@@ -545,6 +545,7 @@ public partial class CustomerBillReviewViewModel : ObservableObject
     [RelayCommand]
     private void ResetToScannedQuantities()
     {
+        if (IsLocked) return;
         var confirm = MessageBox.Show(
             "Bạn có chắc chắn muốn khôi phục số lượng tính tiền của tất cả các dòng về theo đúng số lượng ảnh trên ổ đĩa không?",
             "Xác nhận khôi phục số lượng",
@@ -571,6 +572,7 @@ public partial class CustomerBillReviewViewModel : ObservableObject
     [RelayCommand]
     private async Task RescanDraftAsync()
     {
+        if (IsLocked) return;
         try
         {
             IsBusy = true;
@@ -602,6 +604,7 @@ public partial class CustomerBillReviewViewModel : ObservableObject
     [RelayCommand]
     private void EditGuestName()
     {
+        if (IsLocked) return;
         var inputDlg = new InputDialog("Đổi Tên Khách Lẻ", "Nhập tên mới hiển thị trên hóa đơn và file ảnh JPEG:", Bill.CustomerNameSnapshot)
         {
             Owner = Application.Current?.MainWindow
@@ -620,7 +623,7 @@ public partial class CustomerBillReviewViewModel : ObservableObject
     [RelayCommand]
     private async Task ConvertGuestToCustomerAsync()
     {
-        if (!IsGuestBill) return;
+        if (!IsGuestBill || IsLocked) return;
 
         string promptDefault = !string.IsNullOrWhiteSpace(GuestCustomerName) ? GuestCustomerName : Bill.CustomerNameSnapshot;
         var inputDlg = new InputDialog("Chuyển thành Khách Hàng", "Nhập tên khách hàng để lưu vào danh mục của xưởng:", promptDefault)
@@ -1044,19 +1047,41 @@ public partial class CustomerBillReviewViewModel : ObservableObject
         }
     }
 
+    public Func<string, string, string?> ReopenReasonFunc { get; set; } = (title, prompt) =>
+    {
+        var dialog = new InputDialog(title, prompt, "")
+        {
+            Owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
+        };
+        return dialog.ShowDialog() == true ? dialog.InputText : null;
+    };
+
+    public Func<string, string, MessageBoxButton, MessageBoxImage, MessageBoxResult> ConfirmFunc { get; set; } = MessageBox.Show;
+
     [RelayCommand]
     private async Task ReopenBillAsync()
     {
-        var dialog = new InputDialog("Mở lại hóa đơn", "Nhập lý do sửa snapshot hóa đơn đã chốt:", "")
-            { Owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive) };
-        if (dialog.ShowDialog() != true || string.IsNullOrWhiteSpace(dialog.InputText)) return;
-        if (MessageBox.Show("Mở lại sẽ cho phép thay đổi nội dung hóa đơn. Bản đã gửi khách cần được thay thế sau khi chốt lại. Tiếp tục?",
-            "Xác nhận mở lại", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        string? rawReason = ReopenReasonFunc("Mở lại hóa đơn", "Nhập lý do sửa snapshot hóa đơn đã chốt:");
+        if (string.IsNullOrWhiteSpace(rawReason)) return;
+        string reason = rawReason.Trim();
+
+        string billName = !string.IsNullOrWhiteSpace(Bill.BillNumber)
+            ? Bill.BillNumber
+            : (Bill.CustomerNameSnapshot ?? "này");
+
+        var confirm = ConfirmFunc(
+            $"Bạn có chắc chắn muốn mở khóa hóa đơn '{billName}' để chỉnh sửa không?\n\nHóa đơn đã khóa sẽ quay lại trạng thái Nháp (Draft).",
+            "Xác nhận mở khóa hóa đơn",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (confirm != MessageBoxResult.Yes) return;
+
         try
         {
             IsBusy = true;
             StatusMessage = "Đang mở khóa hóa đơn...";
-            await _customerBillingService.ReopenBillAsync(Bill.Id, dialog.InputText);
+            await _customerBillingService.ReopenBillAsync(Bill.Id, reason);
             Bill.Status = CustomerBillStatus.Draft;
             Bill.LockedAt = null;
             Bill.ExportedAt = null;
@@ -1064,11 +1089,15 @@ public partial class CustomerBillReviewViewModel : ObservableObject
             IsLocked = false;
             IsExportSuccess = false;
             ExportedFilePath = string.Empty;
-            OnPropertyChanged(nameof(CanViewExportedBill));
-            OnPropertyChanged(nameof(IsBillExported));
-            OnPropertyChanged(nameof(ViewBillToolTip));
-            OnPropertyChanged(nameof(FolderToolTip));
-            OnPropertyChanged(nameof(ExportButtonText));
+            _lastExportedSignature = null;
+            UpdateExportButtonState();
+
+            if (_activePreviewWindow != null && _activePreviewWindow.IsLoaded)
+            {
+                _activePreviewWindow.Close();
+                _activePreviewWindow = null;
+            }
+
             StatusMessage = "Hóa đơn đã được mở khóa về bản nháp (Draft)!";
         }
         catch (Exception ex)
@@ -1174,10 +1203,15 @@ public partial class CustomerBillReviewViewModel : ObservableObject
 
         try
         {
+            using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var ms = new MemoryStream();
+            fs.CopyTo(ms);
+            ms.Position = 0;
+
             var bitmap = new BitmapImage();
             bitmap.BeginInit();
             bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.UriSource = new Uri(filePath, UriKind.Absolute);
+            bitmap.StreamSource = ms;
             bitmap.EndInit();
             bitmap.Freeze();
 
@@ -1284,7 +1318,7 @@ public partial class CustomerBillReviewViewModel : ObservableObject
                 bool? dialogResult = previewWindow.ShowDialog();
                 if (dialogResult == true && previewWindow.WasPrinted)
                 {
-                    StatusMessage = "Đã gửi lệnh in tem vận chuyển 75x100mm tới máy in thành công!";
+                    StatusMessage = "Đã gửi lệnh in tem vận chuyển tới máy in thành công!";
                 }
             }
             else
@@ -1314,7 +1348,7 @@ public partial class CustomerBillReviewViewModel : ObservableObject
         {
             IsBusy = true;
             if (!IsLocked) Bill.ShippingAddressSnapshot = ShippingAddress;
-            StatusMessage = "Đang kết xuất ảnh tem vận chuyển (75x100mm)...";
+            StatusMessage = "Đang kết xuất ảnh tem vận chuyển...";
 
             // Persist address snapshot if repo available
             var repo = _customerBillRepository ?? (App.Current as App)?.Services?.GetService(typeof(ICustomerBillRepository)) as ICustomerBillRepository;

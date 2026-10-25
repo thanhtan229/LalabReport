@@ -263,4 +263,88 @@ describe('PWA viewBill rendering', () => {
 
     expect(lanDom.body.innerHTML).toBe(cloudDom.body.innerHTML);
   });
+
+  it('opens print preview modal via viewLabel/viewOrderLabel when tapping In tem on order cards', () => {
+    const renderOrdersFn = script.slice(script.indexOf('    function renderOrders('), script.indexOf('    function filterOrders('));
+    const viewLabelFn = script.slice(script.indexOf('    function viewLabel('), script.indexOf('    function showToast('));
+
+    const orderList = { innerHTML: '' };
+    const orders = [
+      {
+        id: 101,
+        orderCode: 'ORD-101',
+        customerName: 'Khách A',
+        folderName: 'Khách A',
+        isPrinted: false,
+        isDelivered: false,
+        totalQuantity: 10,
+        customerBillId: 501,
+        items: [{ variantName: '10x15', size: '10x15', billQuantity: 10 }]
+      },
+      {
+        id: 102,
+        orderCode: 'ORD-102',
+        customerName: 'Khách B',
+        folderName: 'Khách B',
+        isPrinted: true,
+        isDelivered: false,
+        totalQuantity: 5,
+        customerBillId: null,
+        items: [{ variantName: '13x18', size: '13x18', billQuantity: 5 }]
+      }
+    ];
+
+    const removedClasses: string[] = [];
+    const previewBody = { innerHTML: '' };
+    const previewTitle = { innerText: '' };
+    const previewModal = { classList: { remove(cls: string) { removedClasses.push(cls); } } };
+
+    const doc = {
+      getElementById(id: string) {
+        if (id === 'orderList') return orderList;
+        if (id === 'previewModalBody') return previewBody;
+        if (id === 'previewModalTitle') return previewTitle;
+        if (id === 'previewModal') return previewModal;
+        return { innerText: '' };
+      }
+    };
+
+    runInNewContext(
+      `const IS_CLOUD_BUILD = true; let currentRole = 'Admin', authToken = 'tok123', cachedOrders = ${JSON.stringify(orders)}; ${escapeHtml}\n${renderOrdersFn}\n${viewLabelFn}\nrenderOrders(cachedOrders, false);`,
+      { document: doc }
+    );
+
+    expect(orderList.innerHTML).toContain('onclick="viewLabel(501, 101)"');
+    expect(orderList.innerHTML).toContain('onclick="viewOrderLabel(102)"');
+    expect(orderList.innerHTML).not.toContain('onclick="triggerRemotePrint(');
+
+    runInNewContext(
+      `const IS_CLOUD_BUILD = true; let currentRole = 'Admin', authToken = 'tok123', cachedOrders = ${JSON.stringify(orders)}; ${viewLabelFn}\nviewLabel(501, 101);`,
+      { document: doc }
+    );
+    expect(removedClasses).toContain('hidden');
+    expect(previewTitle.innerText).toBe('Xem trước tem giao hàng');
+    expect(previewBody.innerHTML).toContain('/api/bills/501/label?token=tok123&orderId=101');
+    expect(previewBody.innerHTML).toContain('triggerRemotePrint(101, 501, this)');
+    expect(previewBody.innerHTML).toContain('handleLabelImageError(this, 101)');
+
+    removedClasses.length = 0;
+    runInNewContext(
+      `const IS_CLOUD_BUILD = true; let currentRole = 'Staff', authToken = 'tok123', cachedOrders = ${JSON.stringify(orders)}; ${viewLabelFn}\nviewOrderLabel(102);`,
+      { document: doc }
+    );
+    expect(removedClasses).toContain('hidden');
+    expect(previewTitle.innerText).toBe('Xem trước tem đóng gói');
+    expect(previewBody.innerHTML).toContain('/api/orders/102/label?token=tok123');
+    expect(previewBody.innerHTML).toContain('triggerRemotePrint(102, null, this)');
+    expect(previewBody.innerHTML).toContain('handleLabelImageError(this, null)');
+  });
+it('renders initial Ready gallery card with img-holder and retryGalleryBatch fallback for R2-404 self-heal', () => {
+    const readyBranch = script.slice(
+      script.indexOf("if (item.status === 'Ready' && item.thumbnailUrl)"),
+      script.indexOf('missingItems.push({ fileId: item.fileId')
+    );
+    expect(readyBranch).toContain('id="img-holder-${item.fileId}"');
+    expect(readyBranch).toContain('retryGalleryBatch(${orderId}');
+  });
 });

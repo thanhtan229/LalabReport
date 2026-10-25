@@ -749,6 +749,28 @@ public class DatabaseMigrator : IDatabaseMigrator
                     claim_token TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('STARTED','COMPLETED','FAILED')),
                     error_message TEXT, acknowledged INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY(endpoint,stream_id,command_id));"
+            },
+            new MigrationDefinition
+            {
+                Version = 23,
+                Name = "ThumbnailCacheMetadata",
+                Sql = @"
+                CREATE TABLE IF NOT EXISTS thumbnail_cache_entries (
+                    cache_key TEXT PRIMARY KEY,
+                    root_folder_id INTEGER,
+                    source_relative_path TEXT NOT NULL,
+                    source_file_size INTEGER NOT NULL,
+                    source_last_write_ticks INTEGER NOT NULL,
+                    codec_version TEXT NOT NULL,
+                    cached_file_path TEXT NOT NULL,
+                    cached_file_size INTEGER NOT NULL,
+                    created_at_utc TEXT NOT NULL,
+                    last_used_at_utc TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'Ready'
+                );
+                CREATE INDEX IF NOT EXISTS idx_thumbnail_cache_last_used ON thumbnail_cache_entries(last_used_at_utc);
+                CREATE INDEX IF NOT EXISTS idx_thumbnail_cache_source ON thumbnail_cache_entries(root_folder_id, source_relative_path);
+                "
             }
 
         };

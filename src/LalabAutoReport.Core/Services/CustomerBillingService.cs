@@ -540,7 +540,7 @@ public class CustomerBillingService : ICustomerBillingService
     {
         if (string.IsNullOrWhiteSpace(reason))
         {
-            throw new ArgumentException("Lý do mở lại hóa đơn không được để trống.", nameof(reason));
+            reason = "Mở lại để chỉnh sửa";
         }
 
         var bill = await _customerBillRepository.GetByIdAsync(billId, cancellationToken);

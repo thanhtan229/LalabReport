@@ -23,11 +23,14 @@ public class CloudSyncService : ICloudSyncService, IDisposable
     private readonly IReportService _reportService;
     private readonly ICloudMediaSyncService? _cloudMediaSyncService;
     private readonly IShippingLabelExporter? _shippingLabelExporter;
+    private readonly IOrderGalleryService? _orderGalleryService;
+    private readonly IThumbnailService? _thumbnailService;
     private readonly HttpClient _httpClient;
     private readonly ILogger<CloudSyncService>? _logger;
     private readonly Timer? _periodicPullTimer;
 
     private readonly SemaphoreSlim _syncGate = new(1, 1);
+    private readonly SemaphoreSlim _galleryGate = new(1, 1);
     private readonly ICloudSyncStateRepository? _syncState;
     private readonly SqliteRemotePrintLedger? _printLedger;
     private bool _isSyncing;
@@ -58,7 +61,9 @@ public class CloudSyncService : ICloudSyncService, IDisposable
         IShippingLabelExporter? shippingLabelExporter = null,
         ILogger<CloudSyncService>? logger = null,
         ICloudSyncStateRepository? syncState = null,
-        bool enablePeriodicSync = true)
+        bool enablePeriodicSync = true,
+        IOrderGalleryService? orderGalleryService = null,
+        IThumbnailService? thumbnailService = null)
     {
         _settingsRepository = settingsRepository;
         _orderRepository = orderRepository;
@@ -66,6 +71,8 @@ public class CloudSyncService : ICloudSyncService, IDisposable
         _reportService = reportService;
         _cloudMediaSyncService = cloudMediaSyncService;
         _shippingLabelExporter = shippingLabelExporter;
+        _orderGalleryService = orderGalleryService;
+        _thumbnailService = thumbnailService;
         _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
         _logger = logger;
         _syncState = syncState ?? (settingsRepository is SqliteSettingsRepository sqlite ? new SqliteCloudSyncStateRepository(sqlite.ConnectionFactory) : null);
@@ -90,13 +97,21 @@ public class CloudSyncService : ICloudSyncService, IDisposable
                 else SetSyncing(false, "Đã xác nhận với Cloud; không có thao tác chờ gửi.");
             }
             catch (Exception ex) { _logger?.LogWarning(ex, "Periodic Cloud sync failed"); SetSyncing(false, "Đồng bộ chưa hoàn tất: " + ex.Message); }
-            finally { _syncGate.Release(); }
+            finally
+            {
+                _syncGate.Release();
+                // Process gallery jobs asynchronously outside _syncGate so heartbeat and remote print aren't blocked
+                _ = ProcessPendingGalleryJobsAsync(CancellationToken.None);
+                _ = CheckAutoThumbnailCleanupAsync(CancellationToken.None);
+            }
         }, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(15));
     }
 
     public void Dispose()
     {
         _periodicPullTimer?.Dispose();
+
+        _galleryGate.Dispose();
     }
 
     public Task<CloudSyncResult> SyncAllAsync(CancellationToken cancellationToken = default) => WithGateAsync(() => SyncAllCoreAsync(cancellationToken), cancellationToken);
@@ -106,6 +121,85 @@ public class CloudSyncService : ICloudSyncService, IDisposable
     public Task<int> PullRemoteChangesAsync(CancellationToken cancellationToken = default) => WithGateAsync(() => PullRemoteChangesCoreAsync(cancellationToken), cancellationToken);
     public Task<bool> SendHeartbeatAsync(CancellationToken cancellationToken = default) => WithGateAsync(() => SendHeartbeatCoreAsync(cancellationToken), cancellationToken);
     public Task<int> ProcessPendingPrintCommandsAsync(CancellationToken cancellationToken = default) => WithGateAsync(() => ProcessPendingPrintCommandsCoreAsync(cancellationToken), cancellationToken);
+    public async Task<int> ProcessPendingGalleryJobsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_orderGalleryService == null) return 0;
+        if (!await _galleryGate.WaitAsync(0, cancellationToken)) return 0;
+        try
+        {
+            using var lifecycle = await EnterDatabaseLifecycleAsync(cancellationToken);
+            return await ProcessPendingGalleryJobsCoreAsync(cancellationToken);
+        }
+        finally
+        {
+            _galleryGate.Release();
+        }
+    }
+
+    public async Task<bool> CleanupCloudGalleryCacheAsync(int retentionDays, bool clearAll = false, CancellationToken cancellationToken = default)
+    {
+        var settings = await _settingsRepository.GetSettingsAsync(cancellationToken);
+        if (!settings.EnableCloudSync) return false;
+        string apiUrl = NormalizeApiUrl(settings.CloudSyncApiUrl);
+        string secret = settings.CloudSyncSecret ?? "";
+        if (string.IsNullOrWhiteSpace(apiUrl) || string.IsNullOrWhiteSpace(secret)) return false;
+
+        try
+        {
+            var payload = clearAll ? new { clearAll = true } : (object)new { retentionDays };
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"{apiUrl}/api/sync/gallery/cleanup")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json")
+            };
+            req.Headers.Add("X-Sync-Secret", secret);
+            using var resp = await _httpClient.SendAsync(req, cancellationToken);
+            return resp.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Lỗi gọi dọn dẹp thumbnail cache trên Cloud");
+            return false;
+        }
+    }
+
+    private async Task CheckAutoThumbnailCleanupAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var settings = await _settingsRepository.GetSettingsAsync(cancellationToken);
+            if (!settings.EnableThumbnailAutoCleanup) return;
+
+            bool shouldSweep = true;
+            if (!string.IsNullOrWhiteSpace(settings.LastThumbnailCleanupAt) &&
+                DateTimeOffset.TryParse(settings.LastThumbnailCleanupAt, out var lastSweep))
+            {
+                if (DateTimeOffset.UtcNow - lastSweep < TimeSpan.FromHours(24))
+                {
+                    shouldSweep = false;
+                }
+            }
+
+            if (shouldSweep)
+            {
+                int days = (settings.ThumbnailRetentionDays == 30 || settings.ThumbnailRetentionDays == 90) ? settings.ThumbnailRetentionDays : 60;
+                if (_thumbnailService != null)
+                {
+                    await _thumbnailService.CleanupExpiredDiskCacheAsync(TimeSpan.FromDays(days), cancellationToken);
+                }
+                if (settings.EnableCloudSync)
+                {
+                    await CleanupCloudGalleryCacheAsync(days, clearAll: false, cancellationToken);
+                }
+                settings.LastThumbnailCleanupAt = DateTimeOffset.UtcNow.ToString("o");
+                await _settingsRepository.SaveSettingsAsync(settings, cancellationToken);
+                _logger?.LogInformation("Periodic 24h thumbnail cleanup sweep completed (retention {Days} days).", days);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Lỗi kiểm tra chu kỳ 24h dọn thumbnail cache");
+        }
+    }
 
     private async Task<T> WithGateAsync<T>(Func<Task<T>> action, CancellationToken ct)
     {
@@ -650,6 +744,166 @@ public class CloudSyncService : ICloudSyncService, IDisposable
         }
     }
 
+    private async Task<int> ProcessPendingGalleryJobsCoreAsync(CancellationToken cancellationToken = default)
+    {
+        if (_orderGalleryService == null) return 0;
+        var settings = await _settingsRepository.GetSettingsAsync(cancellationToken);
+        if (!settings.EnableCloudSync) return 0;
+        string apiUrl = NormalizeApiUrl(settings.CloudSyncApiUrl);
+        string secret = settings.CloudSyncSecret ?? "";
+        if (string.IsNullOrWhiteSpace(apiUrl) || string.IsNullOrWhiteSpace(secret)) return 0;
+
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"{apiUrl}/api/sync/gallery/jobs");
+            req.Headers.Add("X-Sync-Secret", secret);
+            using var resp = await _httpClient.SendAsync(req, cancellationToken);
+            if (!resp.IsSuccessStatusCode) return 0;
+
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(cancellationToken));
+            if (!doc.RootElement.TryGetProperty("jobs", out var jobs) || jobs.ValueKind != JsonValueKind.Array) return 0;
+
+            int processed = 0;
+            foreach (var job in jobs.EnumerateArray())
+            {
+                string id = job.GetProperty("id").GetString()!;
+                long orderId = job.GetProperty("orderId").GetInt64();
+                string manifestVersion = job.GetProperty("manifestVersion").GetString() ?? "";
+                string claimToken = Guid.NewGuid().ToString("N");
+
+                using var claimReq = new HttpRequestMessage(HttpMethod.Post, $"{apiUrl}/api/sync/gallery/jobs/{id}/claim")
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(new { claimToken }, JsonOptions), Encoding.UTF8, "application/json")
+                };
+                claimReq.Headers.Add("X-Sync-Secret", secret);
+                using var claimResp = await _httpClient.SendAsync(claimReq, cancellationToken);
+                if (claimResp.StatusCode == System.Net.HttpStatusCode.Conflict || !claimResp.IsSuccessStatusCode)
+                    continue;
+
+                try
+                {
+                    if (string.IsNullOrWhiteSpace(manifestVersion))
+                    {
+                        var manifest = await _orderGalleryService.GetOrderManifestAsync(orderId, cancellationToken);
+                        if (manifest != null)
+                        {
+                            using var postManifest = new HttpRequestMessage(HttpMethod.Post, $"{apiUrl}/api/sync/gallery/manifests")
+                            {
+                                Content = new StringContent(JsonSerializer.Serialize(manifest, JsonOptions), Encoding.UTF8, "application/json")
+                            };
+                            postManifest.Headers.Add("X-Sync-Secret", secret);
+                            using var postResp = await _httpClient.SendAsync(postManifest, cancellationToken);
+                            postResp.EnsureSuccessStatusCode();
+
+                            using var readyReq = new HttpRequestMessage(HttpMethod.Post, $"{apiUrl}/api/sync/gallery/jobs/{id}/status")
+                            {
+                                Content = new StringContent(JsonSerializer.Serialize(new { claimToken, status = "READY" }, JsonOptions), Encoding.UTF8, "application/json")
+                            };
+                            readyReq.Headers.Add("X-Sync-Secret", secret);
+                            await _httpClient.SendAsync(readyReq, cancellationToken);
+                            processed++;
+                        }
+                        else
+                        {
+                            using var failReq = new HttpRequestMessage(HttpMethod.Post, $"{apiUrl}/api/sync/gallery/jobs/{id}/status")
+                            {
+                                Content = new StringContent(JsonSerializer.Serialize(new { claimToken, status = "FAILED", errorMessage = "Không tìm thấy thư mục hoặc ảnh cho đơn hàng này." }, JsonOptions), Encoding.UTF8, "application/json")
+                            };
+                            failReq.Headers.Add("X-Sync-Secret", secret);
+                            await _httpClient.SendAsync(failReq, cancellationToken);
+                        }
+                    }
+                    else if (job.TryGetProperty("fileIds", out var fileIdsProp) && fileIdsProp.ValueKind == JsonValueKind.Array)
+                    {
+                        var manifest = await _orderGalleryService.GetOrderManifestAsync(orderId, cancellationToken);
+                        var manifestItems = manifest?.Groups.SelectMany(g => g.Items).ToList() ?? new List<OrderGalleryItem>();
+                        var itemLookup = manifestItems.ToDictionary(i => i.FileId, StringComparer.OrdinalIgnoreCase);
+
+                        int uploadedCount = 0;
+                        int totalRequested = 0;
+
+                        foreach (var fElement in fileIdsProp.EnumerateArray())
+                        {
+                            totalRequested++;
+                            string fileId = fElement.GetString()!;
+                            var thumbResult = await _orderGalleryService.GetGalleryThumbnailAsync(orderId, manifestVersion, fileId, cancellationToken);
+                            if (thumbResult.Status == ThumbnailStatus.Success && !string.IsNullOrEmpty(thumbResult.CachedFilePath) && File.Exists(thumbResult.CachedFilePath))
+                            {
+                                itemLookup.TryGetValue(fileId, out var matchedItem);
+                                string versionParam = !string.IsNullOrWhiteSpace(matchedItem?.Version) ? Uri.EscapeDataString(matchedItem.Version) : "1";
+
+                                byte[] bytes = await File.ReadAllBytesAsync(thumbResult.CachedFilePath, cancellationToken);
+                                using var uploadReq = new HttpRequestMessage(HttpMethod.Put, $"{apiUrl}/api/sync/gallery/images/{fileId}?v={versionParam}")
+                                {
+                                    Content = new ByteArrayContent(bytes)
+                                };
+                                uploadReq.Content.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
+                                uploadReq.Headers.Add("X-Sync-Secret", secret);
+                                using var uploadResp = await _httpClient.SendAsync(uploadReq, cancellationToken);
+                                if (uploadResp.IsSuccessStatusCode)
+                                {
+                                    uploadedCount++;
+                                }
+                            }
+                        }
+
+                        if (uploadedCount == 0 && totalRequested > 0)
+                        {
+                            using var failReq = new HttpRequestMessage(HttpMethod.Post, $"{apiUrl}/api/sync/gallery/jobs/{id}/status")
+                            {
+                                Content = new StringContent(JsonSerializer.Serialize(new { claimToken, status = "FAILED", errorMessage = "Không tạo hoặc tải được ảnh lên Cloud." }, JsonOptions), Encoding.UTF8, "application/json")
+                            };
+                            failReq.Headers.Add("X-Sync-Secret", secret);
+                            await _httpClient.SendAsync(failReq, cancellationToken);
+                        }
+                        else
+                        {
+                            if (manifest != null && !string.Equals(manifest.ManifestVersion, manifestVersion, StringComparison.Ordinal))
+                            {
+                                using var postManifest = new HttpRequestMessage(HttpMethod.Post, $"{apiUrl}/api/sync/gallery/manifests")
+                                {
+                                    Content = new StringContent(JsonSerializer.Serialize(manifest, JsonOptions), Encoding.UTF8, "application/json")
+                                };
+                                postManifest.Headers.Add("X-Sync-Secret", secret);
+                                using var postResp = await _httpClient.SendAsync(postManifest, cancellationToken);
+                                postResp.EnsureSuccessStatusCode();
+                            }
+
+                            using var readyReq = new HttpRequestMessage(HttpMethod.Post, $"{apiUrl}/api/sync/gallery/jobs/{id}/status")
+                            {
+                                Content = new StringContent(JsonSerializer.Serialize(new { claimToken, status = "READY" }, JsonOptions), Encoding.UTF8, "application/json")
+                            };
+                            readyReq.Headers.Add("X-Sync-Secret", secret);
+                            await _httpClient.SendAsync(readyReq, cancellationToken);
+                            processed++;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Error processing gallery job {JobId}", id);
+                    try
+                    {
+                        using var failReq = new HttpRequestMessage(HttpMethod.Post, $"{apiUrl}/api/sync/gallery/jobs/{id}/status")
+                        {
+                            Content = new StringContent(JsonSerializer.Serialize(new { claimToken, status = "FAILED", errorMessage = ex.Message }, JsonOptions), Encoding.UTF8, "application/json")
+                        };
+                        failReq.Headers.Add("X-Sync-Secret", secret);
+                        await _httpClient.SendAsync(failReq, cancellationToken);
+                    }
+                    catch { }
+                }
+            }
+
+            return processed;
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogDebug(ex, "Lỗi kiểm tra gallery jobs từ Cloud");
+            return 0;
+        }
+    }
+
     private async Task<int> ProcessPendingPrintCommandsCoreAsync(CancellationToken cancellationToken = default)
     {
         if (_shippingLabelExporter == null || _printLedger == null || _syncState == null) return 0;
@@ -726,29 +980,66 @@ public class CloudSyncService : ICloudSyncService, IDisposable
                 using var claimBody = JsonDocument.Parse(await claimed.Content.ReadAsStringAsync(cancellationToken));
                 if (!claimBody.RootElement.TryGetProperty("success", out var success) || success.ValueKind != JsonValueKind.True)
                     throw new InvalidOperationException("Cloud chưa xác nhận quyền nhận lệnh in.");
-                long orderId = command.GetProperty("orderId").GetInt64();
-                var order = await _orderRepository.GetOrderByIdAsync(orderId, cancellationToken)
-                    ?? throw new InvalidOperationException($"Không tìm thấy đơn hàng #{orderId}");
+                long orderId = command.TryGetProperty("orderId", out var oProp) && oProp.ValueKind == JsonValueKind.Number ? oProp.GetInt64() : 0;
+                Order? order = orderId > 0 ? await _orderRepository.GetOrderByIdAsync(orderId, cancellationToken) : null;
                 string type = command.TryGetProperty("commandType", out var t) ? t.GetString() ?? "" : "";
                 if (type == "print_bill_label")
                 {
                     if (command.TryGetProperty("requestedBy", out var role) && role.GetString() == "Staff")
                         throw new InvalidOperationException("Nhân viên không được in tem hóa đơn có tiền.");
                     long billId = command.GetProperty("billId").GetInt64();
-                    var bill = await _billRepository.GetByIdAsync(billId, cancellationToken)
-                        ?? throw new InvalidOperationException($"Không tìm thấy hóa đơn #{billId}");
-                    await _shippingLabelExporter.PrintShippingLabelAsync(bill, silent: true, cancellationToken);
+                    var bill = await _billRepository.GetByIdAsync(billId, cancellationToken);
+                    if (bill != null)
+                    {
+                        await _shippingLabelExporter.PrintShippingLabelAsync(bill, silent: true, cancellationToken);
+                    }
+                    else if (order != null)
+                    {
+                        await _shippingLabelExporter.PrintOrderShippingLabelAsync(order, silent: true, cancellationToken);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Không tìm thấy hóa đơn #{billId}");
+                    }
+                    printed = true;
+                    // Persist the effect before any delivery mutation or HTTP ACK can fail.
+                    await _printLedger.FinishAsync(apiUrl, stream, id, "COMPLETED", null);
+                    status = "COMPLETED";
+                    processed++;
+                    if (settings.AutoMarkDeliveredOnPrint)
+                    {
+                        if (order != null && !order.IsDelivered)
+                        {
+                            await _orderRepository.UpdateOrderDeliveredStatusAsync(order.Id, true, DateTimeOffset.Now, "Mobile (In từ xa)", cancellationToken);
+                        }
+                        if (bill?.Orders != null)
+                        {
+                            foreach (var bo in bill.Orders.Where(o => o.IsIncluded && o.OrderId > 0))
+                            {
+                                if (order != null && bo.OrderId == order.Id) continue;
+                                var linkedOrder = await _orderRepository.GetOrderByIdAsync(bo.OrderId, cancellationToken);
+                                if (linkedOrder != null && !linkedOrder.IsDelivered)
+                                {
+                                    await _orderRepository.UpdateOrderDeliveredStatusAsync(linkedOrder.Id, true, DateTimeOffset.Now, "Mobile (In từ xa)", cancellationToken);
+                                }
+                            }
+                        }
+                    }
                 }
                 else if (type == "print_order_label")
+                {
+                    if (order == null)
+                        throw new InvalidOperationException($"Không tìm thấy đơn hàng #{orderId}");
                     await _shippingLabelExporter.PrintOrderShippingLabelAsync(order, silent: true, cancellationToken);
+                    printed = true;
+                    // Persist the effect before any delivery mutation or HTTP ACK can fail.
+                    await _printLedger.FinishAsync(apiUrl, stream, id, "COMPLETED", null);
+                    status = "COMPLETED";
+                    processed++;
+                    if (settings.AutoMarkDeliveredOnPrint && !order.IsDelivered)
+                        await _orderRepository.UpdateOrderDeliveredStatusAsync(order.Id, true, DateTimeOffset.Now, "Mobile (In từ xa)", cancellationToken);
+                }
                 else throw new InvalidOperationException("Loại lệnh in không được hỗ trợ.");
-                printed = true;
-                // Persist the effect before any delivery mutation or HTTP ACK can fail.
-                await _printLedger.FinishAsync(apiUrl, stream, id, "COMPLETED", null);
-                status = "COMPLETED";
-                processed++;
-                if (settings.AutoMarkDeliveredOnPrint && !order.IsDelivered)
-                    await _orderRepository.UpdateOrderDeliveredStatusAsync(order.Id, true, DateTimeOffset.Now, "Mobile (In từ xa)", cancellationToken);
             }
             catch (Exception ex)
             {
@@ -858,6 +1149,9 @@ public class CloudSyncService : ICloudSyncService, IDisposable
             billType = b.BillType.ToString(),
             customerId = b.CustomerId,
             customerNameSnapshot = b.CustomerNameSnapshot,
+            phoneSnapshot = b.PhoneSnapshot,
+            shippingAddressSnapshot = b.ShippingAddressSnapshot,
+            note = b.Note,
             periodDate = b.PeriodEnd,
             totalAmount = b.GrandTotal,
             productSubtotal = b.ProductSubtotal,

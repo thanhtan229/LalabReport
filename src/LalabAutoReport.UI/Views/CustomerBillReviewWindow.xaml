@@ -175,7 +175,7 @@
                         <TextBlock Text="{Binding Bill.BillNumber}" FontFamily="{StaticResource Tinix.Font.Mono}" FontWeight="Bold" FontSize="18" Foreground="{StaticResource Tinix.Color.Text.Primary}" VerticalAlignment="Center"/>
                         <TextBlock Text=" • " Foreground="{StaticResource Tinix.Color.Text.Muted}" FontSize="16" VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding Bill.CustomerNameSnapshot}" FontWeight="Bold" FontSize="18" Foreground="{StaticResource Tinix.Color.Text.Primary}" VerticalAlignment="Center"/>
-                        <Button Command="{Binding EditGuestNameCommand}" Content="✏️" Width="26" Height="26" Style="{StaticResource Tinix.Button.Ghost}" Padding="0" Margin="6,0,0,0" ToolTip="Đổi tên khách lẻ" Visibility="{Binding IsGuestBill, Converter={StaticResource BoolToVis}}"/>
+                        <Button Command="{Binding EditGuestNameCommand}" Content="✏️" Width="26" Height="26" Style="{StaticResource Tinix.Button.Ghost}" IsEnabled="{Binding IsEditable}" Padding="0" Margin="6,0,0,0" ToolTip="Đổi tên khách lẻ" Visibility="{Binding IsGuestBill, Converter={StaticResource BoolToVis}}"/>
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                         <TextBlock Text="Kỳ hóa đơn: " Foreground="{StaticResource Tinix.Color.Text.Secondary}" FontSize="13"/>
@@ -193,9 +193,9 @@
 
                 <!-- Right Action Buttons -->
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Command="{Binding ConvertGuestToCustomerCommand}" Content="👤 Chuyển thành Khách Hàng" Height="36" Style="{StaticResource Tinix.Button.Secondary}" Padding="14,0" Margin="0,0,8,0" Visibility="{Binding IsGuestBill, Converter={StaticResource BoolToVis}}"/>
-                    <Button Command="{Binding RescanDraftCommand}" Content="🔄 Quét Lại Dữ Liệu" Height="36" Style="{StaticResource Tinix.Button.Secondary}" Padding="14,0" Margin="0,0,8,0"/>
-                    <Button Command="{Binding ResetToScannedQuantitiesCommand}" Content="🔄 Lấy lại theo thư mục" Height="36" Style="{StaticResource Tinix.Button.Secondary}" Padding="14,0" Margin="0,0,8,0" ToolTip="Khôi phục số lượng tính tiền về đúng số lượng ảnh quét trên ổ đĩa"/>
+                    <Button Command="{Binding ConvertGuestToCustomerCommand}" Content="👤 Chuyển thành Khách Hàng" Height="36" Style="{StaticResource Tinix.Button.Secondary}" IsEnabled="{Binding IsEditable}" Padding="14,0" Margin="0,0,8,0" Visibility="{Binding IsGuestBill, Converter={StaticResource BoolToVis}}"/>
+                    <Button Command="{Binding RescanDraftCommand}" Content="🔄 Quét Lại Dữ Liệu" Height="36" Style="{StaticResource Tinix.Button.Secondary}" IsEnabled="{Binding IsEditable}" Padding="14,0" Margin="0,0,8,0"/>
+                    <Button Command="{Binding ResetToScannedQuantitiesCommand}" Content="🔄 Lấy lại theo thư mục" Height="36" Style="{StaticResource Tinix.Button.Secondary}" IsEnabled="{Binding IsEditable}" Padding="14,0" Margin="0,0,8,0" ToolTip="Khôi phục số lượng tính tiền về đúng số lượng ảnh quét trên ổ đĩa"/>
                     <Button Command="{Binding CloseWindowCommand}" Content="Đóng" Height="36" Style="{StaticResource Tinix.Button.Primary}" Padding="16,0" IsCancel="True"/>
                 </StackPanel>
             </Grid>
@@ -571,7 +571,18 @@
                 <!-- SUMMARY CARD & EXPORT BUTTON (Fixed at Bottom Right) -->
                 <Border Grid.Row="1" Background="{StaticResource Tinix.Color.Bg.Surface}" CornerRadius="{StaticResource Tinix.Radius.Lg}" BorderBrush="{StaticResource Tinix.Color.Border.Subtle}" BorderThickness="1" Padding="16">
                     <StackPanel>
-                        <Button Content="Mở lại để sửa" Command="{Binding ReopenBillCommand}" Visibility="{Binding IsLocked, Converter={StaticResource BoolToVis}}" Margin="0,0,0,8"/>
+                        <!-- Nút mở lại để sửa khi hóa đơn đã bị khóa -->
+                        <Button Command="{Binding ReopenBillCommand}" 
+                                Visibility="{Binding IsLocked, Converter={StaticResource BoolToVis}}" 
+                                Style="{StaticResource Tinix.Button.Warning}"
+                                Height="36"
+                                Margin="0,0,0,10"
+                                ToolTip="Mở khóa hóa đơn về bản nháp để có thể chỉnh sửa lại số lượng, đơn giá, ghi chú...">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="🔓 " FontSize="14" VerticalAlignment="Center"/>
+                                <TextBlock Text="Mở khóa để chỉnh sửa" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
                         <TextBlock Text="TỔNG HỢP THANH TOÁN" FontWeight="Bold" Foreground="{StaticResource Tinix.Color.Text.Secondary}" FontSize="12" Margin="0,0,0,8"/>
 
                         <Grid Margin="0,2">
@@ -635,56 +646,27 @@
                             </Grid>
                         </Border>
 
-                        <!-- Thermal Shipping Label Buttons (75x100mm) -->
-                        <Grid Margin="0,0,0,8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Button Command="{Binding PrintShippingLabelCommand}"
-                                    Height="36"
-                                    Margin="0,0,4,0"
-                                    Style="{StaticResource Tinix.Button.Secondary}"
-                                    ToolTip="Gửi trực tiếp tem dán vận chuyển (75x100mm) tới máy in">
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="🖨️ " FontSize="13" VerticalAlignment="Center"/>
-                                    <TextBlock Text="IN TEM DÁN" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </Button>
-                            <Button Grid.Column="1"
-                                    Command="{Binding ExportShippingLabelCommand}"
-                                    Height="36"
-                                    Margin="4,0,0,0"
-                                    Style="{StaticResource Tinix.Button.Secondary}"
-                                    ToolTip="Xuất file ảnh tem vận chuyển (75x100mm), tự động sao chép vào Clipboard và mở xem ảnh">
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="🏷️ " FontSize="13" VerticalAlignment="Center"/>
-                                    <TextBlock Text="XUẤT TEM ẢNH" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"/>
-                                </StackPanel>
-                            </Button>
-                        </Grid>
-
-                        <!-- Bottom Action Buttons: Copy Bill + Smart Export/View Button -->
+                        <!-- Bottom Action Buttons: In tem dán + Smart Action (Xem/Xuất Bill) -->
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
 
-                            <!-- Left: Copy Bill to Clipboard -->
+                            <!-- Left: In tem dán -->
                             <Button Grid.Column="0"
-                                    Command="{Binding CopyBillCommand}"
+                                    Command="{Binding PrintShippingLabelCommand}"
                                     Height="44"
                                     Margin="0,0,4,0"
                                     Style="{StaticResource Tinix.Button.Secondary}"
-                                    ToolTip="Sao chép ảnh hóa đơn vào Clipboard (Ctrl + V để dán sang Zalo/Messenger), không lưu file ảnh hay CSDL">
+                                    ToolTip="Gửi trực tiếp tem dán vận chuyển (75x100mm) tới máy in">
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="📋 " FontSize="15" VerticalAlignment="Center"/>
-                                    <TextBlock Text="COPY BILL" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
+                                    <TextBlock Text="🖨️ " FontSize="15" VerticalAlignment="Center"/>
+                                    <TextBlock Text="IN TEM DÁN" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Button>
 
-                            <!-- Right: Smart Action (Xuất / Mở xem / Xuất lại) -->
+                            <!-- Right: Smart Action (Xuất / Xem / Xuất lại) -->
                             <Button Grid.Column="1"
                                     Command="{Binding ExportBillCommand}"
                                     Height="44"

@@ -68,6 +68,9 @@ project.lock.json
 project.fragment.lock.json
 artifacts/
 
+# Local runtime output (generated bills/labels)
+/Bills/
+
 # Tye
 .tye/
 

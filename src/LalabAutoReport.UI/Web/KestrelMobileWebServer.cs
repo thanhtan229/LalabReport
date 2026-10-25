@@ -346,6 +346,152 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             return Results.NotFound(new { message = "Không tạo được ảnh thumbnail." });
         });
 
+        // 4.1 Order Gallery Manifest Request
+        app.MapPost("/api/orders/{id:long}/gallery/requests", async (long id, HttpContext ctx) =>
+        {
+            var auth = CheckAuth(ctx);
+            if (!auth.IsAuthenticated) return Results.Unauthorized();
+
+            var galleryService = _serviceProvider.GetRequiredService<IOrderGalleryService>();
+            try
+            {
+                var manifest = await galleryService.GetOrderManifestAsync(id, ctx.RequestAborted);
+                return Results.Ok(manifest);
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound(new { message = "Không tìm thấy đơn hàng." });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(detail: ex.Message, statusCode: StatusCodes.Status500InternalServerError);
+            }
+        });
+
+        // 4.2 Order Gallery Page Items
+        app.MapGet("/api/orders/{id:long}/gallery", async (long id, HttpContext ctx) =>
+        {
+            var auth = CheckAuth(ctx);
+            if (!auth.IsAuthenticated) return Results.Unauthorized();
+
+            string version = ctx.Request.Query["version"].ToString() ?? string.Empty;
+            int offset = 0;
+            if (int.TryParse(ctx.Request.Query["offset"], out var parsedOffset) && parsedOffset >= 0)
+            {
+                offset = parsedOffset;
+            }
+            int limit = 24;
+            if (int.TryParse(ctx.Request.Query["limit"], out var parsedLimit) && parsedLimit > 0 && parsedLimit <= 100)
+            {
+                limit = parsedLimit;
+            }
+
+            var galleryService = _serviceProvider.GetRequiredService<IOrderGalleryService>();
+            try
+            {
+                var page = await galleryService.GetOrderGalleryPageAsync(id, version, offset, limit, ctx.RequestAborted);
+                return Results.Ok(page);
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound(new { message = "Không tìm thấy đơn hàng." });
+            }
+        });
+
+        // 4.3 Order Gallery Image Thumbnail
+        app.MapGet("/api/orders/{id:long}/gallery/images/{fileId}", async (long id, string fileId, HttpContext ctx) =>
+        {
+            var auth = CheckAuth(ctx);
+            if (!auth.IsAuthenticated) return Results.Unauthorized();
+
+            string version = ctx.Request.Query["v"].ToString() ?? string.Empty;
+            var galleryService = _serviceProvider.GetRequiredService<IOrderGalleryService>();
+
+            try
+            {
+                var result = await galleryService.GetGalleryThumbnailAsync(id, version, fileId, ctx.RequestAborted);
+                if (result.Status == ThumbnailStatus.Success && !string.IsNullOrWhiteSpace(result.CachedFilePath) && File.Exists(result.CachedFilePath))
+                {
+                    ctx.Response.Headers.CacheControl = "private, max-age=86400";
+                    return Results.File(result.CachedFilePath, "image/jpeg");
+                }
+
+                if (result.Status == ThumbnailStatus.UnsupportedFormat)
+                {
+                    return Results.Json(new { unsupported = true, format = result.FormatExtension }, statusCode: StatusCodes.Status415UnsupportedMediaType);
+                }
+
+                return Results.NotFound(new { message = "Không tìm thấy ảnh hoặc ảnh chưa sẵn sàng." });
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound(new { message = "Không tìm thấy đơn hàng." });
+            }
+        });
+
+        // 4.4 Order Gallery Viewport Touch
+        app.MapPost("/api/orders/{id:long}/gallery/touch", async (long id, HttpContext ctx) =>
+        {
+            var auth = CheckAuth(ctx);
+            if (!auth.IsAuthenticated) return Results.Unauthorized();
+
+            try
+            {
+                var body = await ctx.Request.ReadFromJsonAsync<TouchGalleryRequest>(cancellationToken: ctx.RequestAborted);
+                if (body != null && body.FileIds != null && body.FileIds.Count > 0)
+                {
+                    var galleryService = _serviceProvider.GetRequiredService<IOrderGalleryService>();
+                    await galleryService.TouchViewedBatchAsync(id, body.Version ?? "", body.FileIds, ctx.RequestAborted);
+                }
+                return Results.Ok(new { success = true });
+            }
+            catch
+            {
+                return Results.BadRequest(new { message = "Dữ liệu yêu cầu không hợp lệ." });
+            }
+        });
+
+        // 4.5 Admin Settings: Cleanup / Clear Thumbnails
+        app.MapPost("/api/settings/thumbnails/cleanup", async (HttpContext ctx) =>
+        {
+            var auth = CheckAuth(ctx);
+            if (!auth.IsAuthenticated) return Results.Unauthorized();
+            if (auth.Role != MobileUserRole.Admin) return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var thumbService = _serviceProvider.GetRequiredService<IThumbnailService>();
+            var settings = await _settingsRepository.GetSettingsAsync(ctx.RequestAborted);
+            int days = (settings.ThumbnailRetentionDays == 30 || settings.ThumbnailRetentionDays == 90) ? settings.ThumbnailRetentionDays : 60;
+            var summary = await thumbService.CleanupExpiredDiskCacheAsync(TimeSpan.FromDays(days), ctx.RequestAborted);
+
+            settings.LastThumbnailCleanupAt = DateTimeOffset.UtcNow.ToString("o");
+            await _settingsRepository.SaveSettingsAsync(settings, ctx.RequestAborted);
+
+            return Results.Ok(new
+            {
+                success = true,
+                filesDeleted = summary.FilesDeleted,
+                bytesFreed = summary.BytesFreed,
+                errorsCount = summary.ErrorsCount
+            });
+        });
+
+        app.MapPost("/api/settings/thumbnails/clear", async (HttpContext ctx) =>
+        {
+            var auth = CheckAuth(ctx);
+            if (!auth.IsAuthenticated) return Results.Unauthorized();
+            if (auth.Role != MobileUserRole.Admin) return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+            var thumbService = _serviceProvider.GetRequiredService<IThumbnailService>();
+            var summary = await thumbService.ClearAllDiskCacheAsync(ctx.RequestAborted);
+
+            return Results.Ok(new
+            {
+                success = true,
+                filesDeleted = summary.FilesDeleted,
+                bytesFreed = summary.BytesFreed
+            });
+        });
+
         // 5. Order Detail
         app.MapGet("/api/orders/{id:long}", async (long id, HttpContext ctx) =>
         {
@@ -697,22 +843,44 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             if (!auth.IsAuthenticated) return Results.Unauthorized();
             if (auth.Role != MobileUserRole.Admin) return Results.StatusCode(403);
 
+            var labelExporter = _serviceProvider.GetRequiredService<IShippingLabelExporter>();
             var billRepo = _serviceProvider.GetRequiredService<ICustomerBillRepository>();
             var bill = await billRepo.GetByIdAsync(id);
-            if (bill == null) return Results.NotFound();
-
-            try
+            if (bill != null)
             {
-                var labelExporter = _serviceProvider.GetRequiredService<IShippingLabelExporter>();
-                string labelPath = await labelExporter.ExportShippingLabelImageAsync(bill);
-                if (File.Exists(labelPath))
+                try
                 {
-                    return Results.File(labelPath, "image/png");
+                    string labelPath = await labelExporter.ExportShippingLabelImageAsync(bill);
+                    if (File.Exists(labelPath))
+                    {
+                        return Results.File(labelPath, "image/png");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to export shipping label for bill {Id}", id);
                 }
             }
-            catch (Exception ex)
+
+            if (ctx.Request.Query.TryGetValue("orderId", out var orderIdVal) && long.TryParse(orderIdVal, out var orderId) && orderId > 0)
             {
-                _logger?.LogWarning(ex, "Failed to export shipping label for bill {Id}", id);
+                var orderRepo = _serviceProvider.GetRequiredService<IOrderRepository>();
+                var order = await orderRepo.GetOrderByIdAsync(orderId);
+                if (order != null)
+                {
+                    try
+                    {
+                        string orderLabelPath = await labelExporter.ExportOrderShippingLabelImageAsync(order);
+                        if (File.Exists(orderLabelPath))
+                        {
+                            return Results.File(orderLabelPath, "image/png");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to export fallback order shipping label for order {OrderId}", orderId);
+                    }
+                }
             }
 
             return Results.NotFound(new { message = "Không thể tạo tem giao hàng." });
@@ -726,15 +894,36 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             if (auth.Role != MobileUserRole.Admin) return Results.StatusCode(403);
 
             var billRepo = _serviceProvider.GetRequiredService<ICustomerBillRepository>();
-            var bill = await billRepo.GetByIdAsync(id);
-            if (bill == null) return Results.NotFound(new { message = "Không tìm thấy hóa đơn." });
-
+            var orderRepo = _serviceProvider.GetRequiredService<IOrderRepository>();
             var labelExporter = _serviceProvider.GetRequiredService<IShippingLabelExporter>();
             var settings = await _settingsRepository.GetSettingsAsync();
 
+            var bill = await billRepo.GetByIdAsync(id);
+            Order? fallbackOrder = null;
+
+            if (bill == null)
+            {
+                if (ctx.Request.Query.TryGetValue("orderId", out var orderIdVal) && long.TryParse(orderIdVal, out var queryOrderId) && queryOrderId > 0)
+                {
+                    fallbackOrder = await orderRepo.GetOrderByIdAsync(queryOrderId);
+                }
+
+                if (fallbackOrder == null)
+                {
+                    return Results.NotFound(new { message = "Không tìm thấy hóa đơn." });
+                }
+            }
+
             try
             {
-                await labelExporter.PrintShippingLabelAsync(bill, silent: true);
+                if (bill != null)
+                {
+                    await labelExporter.PrintShippingLabelAsync(bill, silent: true);
+                }
+                else if (fallbackOrder != null)
+                {
+                    await labelExporter.PrintOrderShippingLabelAsync(fallbackOrder, silent: true);
+                }
             }
             catch (Exception ex)
             {
@@ -742,21 +931,43 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
                 return Results.Problem(detail: $"Lỗi khi in tem hóa đơn: {ex.Message}", statusCode: 500);
             }
 
-            if (settings.AutoMarkDeliveredOnPrint && bill.Orders != null && bill.Orders.Count > 0)
+            bool markedDelivered = false;
+            DateTimeOffset? deliveredAt = null;
+            string? deliveredBy = null;
+
+            if (settings.AutoMarkDeliveredOnPrint)
             {
-                var orderRepo = _serviceProvider.GetRequiredService<IOrderRepository>();
-                var deliveredAt = DateTimeOffset.Now;
-                string deliveredBy = auth.Role == MobileUserRole.Admin ? "Chủ tiệm (Mobile)" : "Nhân viên (Mobile)";
-                foreach (var ord in bill.Orders.Where(o => o.IsIncluded && o.OrderId > 0))
+                deliveredAt = DateTimeOffset.Now;
+                deliveredBy = auth.Role == MobileUserRole.Admin ? "Chủ tiệm (Mobile)" : "Nhân viên (Mobile)";
+
+                if (bill?.Orders != null && bill.Orders.Count > 0)
                 {
-                    await orderRepo.UpdateOrderDeliveredStatusAsync(ord.OrderId, true, deliveredAt, deliveredBy);
+                    foreach (var ord in bill.Orders.Where(o => o.IsIncluded && o.OrderId > 0))
+                    {
+                        await orderRepo.UpdateOrderDeliveredStatusAsync(ord.OrderId, true, deliveredAt, deliveredBy);
+                    }
+                    markedDelivered = true;
+                }
+                else if (fallbackOrder != null)
+                {
+                    await orderRepo.UpdateOrderDeliveredStatusAsync(fallbackOrder.Id, true, deliveredAt, deliveredBy);
+                    markedDelivered = true;
                 }
             }
+
+            string targetName = bill != null
+                ? $"hóa đơn '{bill.BillNumber}'"
+                : $"đơn hàng '{fallbackOrder?.OrderCode ?? fallbackOrder?.OriginalFolderName}'";
 
             return Results.Ok(new
             {
                 success = true,
-                message = $"Đã in tem bưu kiện cho hóa đơn '{bill.BillNumber}' ({bill.CustomerNameSnapshot})."
+                message = markedDelivered
+                    ? $"Đã in tem bưu kiện và đánh dấu ĐÃ GIAO cho {targetName}."
+                    : $"Đã in tem bưu kiện cho {targetName}.",
+                isDelivered = markedDelivered,
+                deliveredAt = deliveredAt?.ToString("yyyy-MM-dd HH:mm:ss"),
+                deliveredBy = deliveredBy
             });
         });
 
@@ -857,6 +1068,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
         app.MapGet("/sw.js", async (HttpContext ctx) =>
         {
             ctx.Response.ContentType = "application/javascript";
+            ctx.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
             await ctx.Response.WriteAsync("self.addEventListener('install', e => self.skipWaiting()); self.addEventListener('activate', e => e.waitUntil(clients.claim())); self.addEventListener('fetch', e => e.respondWith(fetch(e.request)));");
         });
 
@@ -875,6 +1087,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
 
             // Return main Mobile SPA HTML
             ctx.Response.ContentType = "text/html; charset=utf-8";
+            ctx.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
             await ctx.Response.WriteAsync(MobileSpaHtmlProvider.GetIndexHtml());
         });
     }

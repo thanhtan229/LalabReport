@@ -205,6 +205,50 @@
         </Setter>
     </Style>
 
+    <!-- BUTTON: WARNING / AMBER (Soft Amber with Dark Amber Text) -->
+    <Style x:Key="Tinix.Button.Warning" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource Tinix.Color.Warning.Bg}"/>
+        <Setter Property="Foreground" Value="{StaticResource Tinix.Color.Warning}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource Tinix.Color.Warning.Border}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="FontFamily" Value="{StaticResource Tinix.Font.UI}"/>
+        <Setter Property="FontSize" Value="{StaticResource Tinix.FontSize.Small}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Padding" Value="14,6"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="border"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{StaticResource Tinix.Radius.Md}"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="border" Property="Background" Value="{StaticResource Tinix.Color.Warning.Hover}"/>
+                            <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource Tinix.Color.Warning}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="border" Property="Background" Value="{StaticResource Tinix.Color.Warning.Active}"/>
+                            <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource Tinix.Color.Warning}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="border" Property="Background" Value="{StaticResource Tinix.Color.Border.Subtle}"/>
+                            <Setter Property="Foreground" Value="{StaticResource Tinix.Color.Text.Muted}"/>
+                            <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource Tinix.Color.Border.Subtle}"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- BUTTON: ICON (Small square button for inline actions like Edit) -->
     <Style x:Key="Tinix.Button.Icon" TargetType="Button">
         <Setter Property="Background" Value="Transparent"/>

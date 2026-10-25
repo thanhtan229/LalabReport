@@ -62,9 +62,13 @@
     <Color x:Key="TinixColorWarningRaw">#8A5700</Color>
     <Color x:Key="TinixColorWarningBgRaw">#FFF0C9</Color>
     <Color x:Key="TinixColorWarningBorderRaw">#E9C66E</Color>
+    <Color x:Key="TinixColorWarningHoverBgRaw">#FFE49E</Color>
+    <Color x:Key="TinixColorWarningActiveBgRaw">#FDD87A</Color>
     <SolidColorBrush x:Key="Tinix.Color.Warning" Color="{StaticResource TinixColorWarningRaw}"/>
     <SolidColorBrush x:Key="Tinix.Color.Warning.Bg" Color="{StaticResource TinixColorWarningBgRaw}"/>
     <SolidColorBrush x:Key="Tinix.Color.Warning.Border" Color="{StaticResource TinixColorWarningBorderRaw}"/>
+    <SolidColorBrush x:Key="Tinix.Color.Warning.Hover" Color="{StaticResource TinixColorWarningHoverBgRaw}"/>
+    <SolidColorBrush x:Key="Tinix.Color.Warning.Active" Color="{StaticResource TinixColorWarningActiveBgRaw}"/>
 
     <!-- Danger: Red -->
     <Color x:Key="TinixColorDangerRaw">#D9002B</Color>

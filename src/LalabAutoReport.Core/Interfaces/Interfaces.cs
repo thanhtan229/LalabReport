@@ -708,7 +708,7 @@ public interface IGlobalSearchService
 }
 
 /// <summary>
-/// Thermal shipping label / package slip generator (75x100mm)
+/// Thermal shipping label / package slip generator (40x100mm / 75x100mm)
 /// </summary>
 public interface IShippingLabelExporter
 {
@@ -716,7 +716,7 @@ public interface IShippingLabelExporter
     Task PrintShippingLabelAsync(CustomerBill bill, bool silent = false, CancellationToken cancellationToken = default);
     Task<string> ExportOrderShippingLabelImageAsync(Order order, string? destinationPath = null, CancellationToken cancellationToken = default);
     Task PrintOrderShippingLabelAsync(Order order, bool silent = false, CancellationToken cancellationToken = default);
-    Task PrintTestSampleLabelAsync(string? printerName = null, CancellationToken cancellationToken = default);
+    Task PrintTestSampleLabelAsync(string? printerName = null, string? labelSizeOverride = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

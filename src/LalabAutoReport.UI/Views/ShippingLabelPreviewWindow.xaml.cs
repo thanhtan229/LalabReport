@@ -51,6 +51,8 @@ public partial class ShippingLabelPreviewWindow : Window
         try
         {
             var settings = await _settingsRepository.GetSettingsAsync();
+            string labelSize = settings.ThermalLabelSize ?? ThermalLabelSizes.Size40x100;
+            txtTitle.Text = $"Tem đóng gói bưu kiện ({labelSize})";
 
             if (!string.IsNullOrWhiteSpace(settings.ThermalPrinterName))
             {
@@ -81,10 +83,15 @@ public partial class ShippingLabelPreviewWindow : Window
 
             if (File.Exists(imagePath))
             {
+                using var fs = new FileStream(imagePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using var ms = new MemoryStream();
+                await fs.CopyToAsync(ms);
+                ms.Position = 0;
+
                 var bitmap = new BitmapImage();
                 bitmap.BeginInit();
                 bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.UriSource = new Uri(imagePath, UriKind.Absolute);
+                bitmap.StreamSource = ms;
                 bitmap.EndInit();
                 bitmap.Freeze();
 

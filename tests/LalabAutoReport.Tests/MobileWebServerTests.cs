@@ -57,6 +57,7 @@ public class MobileWebServerTests : IDisposable
         services.AddSingleton<IJpegBillExporter>(new MockJpegBillExporter());
         services.AddSingleton<IShippingLabelExporter>(_labelExporter);
         services.AddSingleton<IThumbnailService>(new MockThumbnailService());
+        services.AddSingleton<IOrderGalleryService>(new MockOrderGalleryService());
 
         _serviceProvider = services.BuildServiceProvider();
 
@@ -598,7 +599,7 @@ public class MobileWebServerTests : IDisposable
             return Task.CompletedTask;
         }
 
-        public Task PrintTestSampleLabelAsync(string? printerName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task PrintTestSampleLabelAsync(string? printerName = null, string? labelSizeOverride = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private class MockThumbnailService : IThumbnailService
@@ -611,6 +612,69 @@ public class MobileWebServerTests : IDisposable
         public void ClearDiskCache() { }
         public long GetDiskCacheSizeBytes() => 1024;
         public void CleanupExpiredDiskCache(TimeSpan maxAge) { }
+        public Task TouchLastUsedAsync(string fullSourcePath, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task TouchLastUsedBatchAsync(IEnumerable<string> fullSourcePaths, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<ThumbnailCleanupSummary> CleanupExpiredDiskCacheAsync(TimeSpan maxAge, CancellationToken cancellationToken = default) => Task.FromResult(new ThumbnailCleanupSummary());
+        public Task<ThumbnailClearSummary> ClearAllDiskCacheAsync(CancellationToken cancellationToken = default) => Task.FromResult(new ThumbnailClearSummary());
+    }
+
+    private class MockOrderGalleryService : IOrderGalleryService
+    {
+        public Task<OrderGalleryManifest> GetOrderManifestAsync(long orderId, CancellationToken cancellationToken = default)
+        {
+            var manifest = new OrderGalleryManifest
+            {
+                OrderId = orderId,
+                OrderCode = "DH-TEST-001",
+                ManifestVersion = "vtest123",
+                TotalImageCount = 2,
+                Groups = new()
+                {
+                    new OrderGalleryGroup
+                    {
+                        OrderItemId = 1,
+                        SpecificationName = "13x18",
+                        FolderName = "13x18",
+                        IsFolderResolved = true,
+                        Items = new()
+                        {
+                            new OrderGalleryItem { FileId = "f1", FileName = "01.jpg", FileSizeBytes = 1000, Status = "Ready" },
+                            new OrderGalleryItem { FileId = "f2", FileName = "02.jpg", FileSizeBytes = 2000, Status = "Ready" }
+                        }
+                    }
+                }
+            };
+            return Task.FromResult(manifest);
+        }
+
+        public Task<OrderGalleryPage> GetOrderGalleryPageAsync(long orderId, string manifestVersion, int offset, int limit, CancellationToken cancellationToken = default)
+        {
+            var page = new OrderGalleryPage
+            {
+                OrderId = orderId,
+                ManifestVersion = manifestVersion,
+                Offset = offset,
+                Limit = limit,
+                TotalCount = 2,
+                HasMore = false,
+                Items = new()
+                {
+                    new OrderGalleryItemDto { FileId = "f1", FileName = "01.jpg", FileSizeBytes = 1000, OrderItemId = 1, SpecificationName = "13x18", Status = "Ready" },
+                    new OrderGalleryItemDto { FileId = "f2", FileName = "02.jpg", FileSizeBytes = 2000, OrderItemId = 1, SpecificationName = "13x18", Status = "Ready" }
+                }
+            };
+            return Task.FromResult(page);
+        }
+
+        public Task<ThumbnailResult> GetGalleryThumbnailAsync(long orderId, string manifestVersion, string fileId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(ThumbnailResult.SuccessResult("dummy_cached.jpg"));
+        }
+
+        public Task TouchViewedBatchAsync(long orderId, string manifestVersion, IEnumerable<string> fileIds, CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
     }
 
     #endregion
@@ -1073,6 +1137,112 @@ public class MobileWebServerTests : IDisposable
         {
             await _webServer.StopAsync();
             try { File.Delete(tempPng); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task GalleryRequests_Unauthorized_Returns401()
+    {
+        await _webServer.StartAsync();
+        try
+        {
+            var response = await _httpClient.PostAsync("/api/orders/1/gallery/requests", null);
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+        finally
+        {
+            await _webServer.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task GalleryRequests_Authorized_ReturnsManifest200()
+    {
+        await _webServer.StartAsync();
+        try
+        {
+            var token = _serviceProvider.GetRequiredService<IMobileAuthService>().GenerateToken(MobileUserRole.Staff);
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var response = await _httpClient.PostAsync("/api/orders/1/gallery/requests", null);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var json = await response.Content.ReadAsStringAsync();
+            json.Should().Contain("vtest123");
+            json.Should().Contain("DH-TEST-001");
+        }
+        finally
+        {
+            await _webServer.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task GalleryPage_Authorized_ReturnsPage200()
+    {
+        await _webServer.StartAsync();
+        try
+        {
+            var token = _serviceProvider.GetRequiredService<IMobileAuthService>().GenerateToken(MobileUserRole.Staff);
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var response = await _httpClient.GetAsync("/api/orders/1/gallery?version=vtest123&offset=0&limit=24");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var json = await response.Content.ReadAsStringAsync();
+            json.Should().Contain("01.jpg");
+            json.Should().Contain("02.jpg");
+        }
+        finally
+        {
+            await _webServer.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task GalleryTouch_Authorized_ReturnsSuccess200()
+    {
+        await _webServer.StartAsync();
+        try
+        {
+            var token = _serviceProvider.GetRequiredService<IMobileAuthService>().GenerateToken(MobileUserRole.Staff);
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            var payload = new StringContent(
+                JsonSerializer.Serialize(new { version = "vtest123", fileIds = new[] { "f1", "f2" } }),
+                Encoding.UTF8,
+                "application/json");
+
+            var response = await _httpClient.PostAsync("/api/orders/1/gallery/touch", payload);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await _webServer.StopAsync();
+        }
+    }
+
+    [Fact]
+    public async Task SettingsThumbnailsCleanup_StaffForbidden_AdminAllowed()
+    {
+        await _webServer.StartAsync();
+        try
+        {
+            var staffToken = _serviceProvider.GetRequiredService<IMobileAuthService>().GenerateToken(MobileUserRole.Staff);
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", staffToken);
+
+            var staffRes = await _httpClient.PostAsync("/api/settings/thumbnails/cleanup", null);
+            staffRes.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+            var adminToken = _serviceProvider.GetRequiredService<IMobileAuthService>().GenerateToken(MobileUserRole.Admin);
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+
+            var adminRes = await _httpClient.PostAsync("/api/settings/thumbnails/cleanup", null);
+            adminRes.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await _webServer.StopAsync();
         }
     }
 }

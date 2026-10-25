@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using LalabAutoReport.Core.Domain;
 
 namespace LalabAutoReport.Core.Interfaces;
 
@@ -28,10 +30,14 @@ public class ThumbnailResult
 public interface IThumbnailService
 {
     Task<ThumbnailResult> GetThumbnailAsync(string fullSourcePath, CancellationToken cancellationToken = default);
+    Task TouchLastUsedAsync(string fullSourcePath, CancellationToken cancellationToken = default);
+    Task TouchLastUsedBatchAsync(IEnumerable<string> fullSourcePaths, CancellationToken cancellationToken = default);
     void Pause();
     void Resume();
     void ClearMemoryCache();
     void ClearDiskCache();
     long GetDiskCacheSizeBytes();
     void CleanupExpiredDiskCache(TimeSpan maxAge);
+    Task<ThumbnailCleanupSummary> CleanupExpiredDiskCacheAsync(TimeSpan maxAge, CancellationToken cancellationToken = default);
+    Task<ThumbnailClearSummary> ClearAllDiskCacheAsync(CancellationToken cancellationToken = default);
 }

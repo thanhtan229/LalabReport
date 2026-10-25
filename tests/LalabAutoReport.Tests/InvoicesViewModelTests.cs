@@ -116,7 +116,14 @@ public class InvoicesViewModelTests
             => Task.FromResult(new Customer { Id = 1, CanonicalName = customerCanonicalName });
         public CustomerBill RecalculateTotals(CustomerBill bill) => bill;
         public Task<CustomerBill> LockBillAsync(CustomerBill draft, CancellationToken cancellationToken = default) => Task.FromResult(draft);
-        public Task ReopenBillAsync(long billId, string reason, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public bool ReopenCalled { get; private set; }
+        public string? LastReopenReason { get; private set; }
+        public Task ReopenBillAsync(long billId, string reason, CancellationToken cancellationToken = default)
+        {
+            ReopenCalled = true;
+            LastReopenReason = reason;
+            return Task.CompletedTask;
+        }
         public Task RecordBillExportedAsync(long billId, string exportFilePath, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task DetachOrderFromCustomerBillAsync(long orderId, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task SyncBillWithScannedOrderAsync(Order scannedOrder, CancellationToken cancellationToken = default) => Task.CompletedTask;
@@ -133,7 +140,57 @@ public class InvoicesViewModelTests
     {
         public AppSettings CurrentSettings { get; set; } = new() { RootFolder = @"C:\FakeRoot" };
         public Task<AppSettings> GetSettingsAsync(CancellationToken cancellationToken = default) => Task.FromResult(CurrentSettings);
-        public Task SaveSettingsAsync(AppSettings settings, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task SaveSettingsAsync(AppSettings settings, CancellationToken cancellationToken = default)
+        {
+            CurrentSettings = settings;
+            return Task.CompletedTask;
+        }
+    }
+
+private class FakeThumbnailService : IThumbnailService
+    {
+        public Task<ThumbnailResult> GetThumbnailAsync(string fullSourcePath, CancellationToken cancellationToken = default) => Task.FromResult(ThumbnailResult.NotFound());
+        public Task TouchLastUsedAsync(string fullSourcePath, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task TouchLastUsedBatchAsync(IEnumerable<string> fullSourcePaths, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void Pause() { }
+        public void Resume() { }
+        public void ClearMemoryCache() { }
+        public void ClearDiskCache() { }
+        public long GetDiskCacheSizeBytes() => 1024 * 1024;
+        public void CleanupExpiredDiskCache(TimeSpan maxAge) { }
+        public Task<ThumbnailCleanupSummary> CleanupExpiredDiskCacheAsync(TimeSpan maxAge, CancellationToken cancellationToken = default)
+            => Task.FromResult(new ThumbnailCleanupSummary { FilesDeleted = 5, BytesFreed = 5 * 1024 * 1024 });
+        public Task<ThumbnailClearSummary> ClearAllDiskCacheAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new ThumbnailClearSummary { FilesDeleted = 10, BytesFreed = 10 * 1024 * 1024 });
+    }
+
+    private class FakeCloudSyncService : ICloudSyncService
+    {
+        public bool IsSyncing => false;
+        public DateTimeOffset? LastSyncTime => null;
+        public string? LastSyncStatus => null;
+        public event EventHandler? SyncStatusChanged { add { } remove { } }
+
+        public bool CleanupCalled { get; private set; }
+        public int LastRetentionDays { get; private set; }
+        public bool LastClearAll { get; private set; }
+        public bool ThrowOnCleanup { get; set; }
+
+        public Task<CloudSyncResult> SyncAllAsync(CancellationToken cancellationToken = default) => Task.FromResult(new CloudSyncResult { Success = true });
+        public Task<CloudSyncResult> SyncDateAsync(string date, CancellationToken cancellationToken = default) => Task.FromResult(new CloudSyncResult { Success = true });
+        public Task<CloudSyncResult> SyncBillAsync(long billId, CancellationToken cancellationToken = default) => Task.FromResult(new CloudSyncResult { Success = true });
+        public Task<CloudSyncResult> UploadBillJpegAsync(long billId, CancellationToken cancellationToken = default) => Task.FromResult(new CloudSyncResult { Success = true });
+        public Task<int> PullRemoteChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
+        public Task<bool> SendHeartbeatAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task<int> ProcessPendingPrintCommandsAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
+        public Task<bool> CleanupCloudGalleryCacheAsync(int retentionDays, bool clearAll = false, CancellationToken cancellationToken = default)
+        {
+            if (ThrowOnCleanup) throw new InvalidOperationException("Simulated cloud failure");
+            CleanupCalled = true;
+            LastRetentionDays = retentionDays;
+            LastClearAll = clearAll;
+            return Task.FromResult(true);
+        }
     }
 
     private class FakeCustomerRepo : ICustomerRepository
@@ -606,5 +663,329 @@ public class InvoicesViewModelTests
         invoicesVm.SelectedCustomerFilter.Should().NotBeNull();
         invoicesVm.SelectedCustomerFilter!.CustomerId.Should().Be(10);
         invoicesVm.FilteredInvoices.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task CustomerBillReviewViewModel_ReopenBill_RestoresDraftAndResetsExportButtonState()
+    {
+        var bill = new CustomerBill
+        {
+            Id = 99,
+            BillNumber = "BILL-REOPEN-TEST",
+            BillType = BillType.Customer,
+            CustomerId = 1,
+            CustomerNameSnapshot = "Test Customer",
+            Status = CustomerBillStatus.Exported,
+            ExportFilePath = string.Empty,
+            LockedAt = DateTimeOffset.UtcNow,
+            ExportedAt = DateTimeOffset.UtcNow,
+            GrandTotal = 100000,
+            ProductSubtotal = 100000
+        };
+
+        var billRepo = new FakeCustomerBillRepo();
+        var billingService = new FakeCustomerBillingService();
+        var jpegExporter = new FakeJpegExporter();
+        var settingsRepo = new FakeSettingsRepo();
+
+        var vm = new CustomerBillReviewViewModel(
+            bill,
+            billingService,
+            jpegExporter,
+            null,
+            null,
+            null,
+            settingsRepo,
+            null,
+            billRepo
+        );
+
+        // Initially exported / locked
+        vm.IsLocked.Should().BeTrue();
+        vm.IsEditable.Should().BeFalse();
+        vm.CanViewExportedBill.Should().BeTrue();
+        vm.IsOpenOnlyState.Should().BeTrue();
+        vm.ExportButtonText.Should().Be("XEM BILL");
+        vm.ExportButtonIcon.Should().Be("🖼️ ");
+
+        // Action: Reopen bill with reason and Yes confirmation
+        vm.ReopenReasonFunc = (_, _) => "   Sửa giá theo thỏa thuận   ";
+        vm.ConfirmFunc = (_, _, _, _) => System.Windows.MessageBoxResult.Yes;
+        await vm.ReopenBillCommand.ExecuteAsync(null);
+
+        // Assert: Billing service called with trimmed reason
+        billingService.ReopenCalled.Should().BeTrue();
+        billingService.LastReopenReason.Should().Be("Sửa giá theo thỏa thuận");
+
+        // Assert: Restored to editable draft state
+        vm.IsLocked.Should().BeFalse();
+        vm.IsEditable.Should().BeTrue();
+        vm.Bill.Status.Should().Be(CustomerBillStatus.Draft);
+        vm.Bill.LockedAt.Should().BeNull();
+        vm.Bill.ExportedAt.Should().BeNull();
+
+        // Assert: Export button properly reset to primary orange export mode
+        vm.CanViewExportedBill.Should().BeFalse();
+        vm.IsOpenOnlyState.Should().BeFalse();
+        vm.ExportButtonText.Should().Be("XUẤT BILL");
+        vm.ExportButtonIcon.Should().Be("⚡ ");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task CustomerBillReviewViewModel_ReopenBill_CanceledBecauseNoReason_RemainsLocked(string? emptyReason)
+    {
+        var bill = new CustomerBill
+        {
+            Id = 101,
+            BillNumber = "BILL-NO-REASON",
+            BillType = BillType.Customer,
+            CustomerId = 1,
+            CustomerNameSnapshot = "Test Customer",
+            Status = CustomerBillStatus.Locked,
+            LockedAt = DateTimeOffset.UtcNow,
+            GrandTotal = 50000,
+            ProductSubtotal = 50000
+        };
+
+        var billRepo = new FakeCustomerBillRepo();
+        var billingService = new FakeCustomerBillingService();
+        var jpegExporter = new FakeJpegExporter();
+        var settingsRepo = new FakeSettingsRepo();
+
+        var vm = new CustomerBillReviewViewModel(
+            bill,
+            billingService,
+            jpegExporter,
+            null,
+            null,
+            null,
+            settingsRepo,
+            null,
+            billRepo
+        );
+
+        vm.IsLocked.Should().BeTrue();
+        vm.ReopenReasonFunc = (_, _) => emptyReason;
+        vm.ConfirmFunc = (_, _, _, _) => System.Windows.MessageBoxResult.Yes;
+
+        await vm.ReopenBillCommand.ExecuteAsync(null);
+
+        // Assert: Billing service was never called, remains locked
+        billingService.ReopenCalled.Should().BeFalse();
+        vm.IsLocked.Should().BeTrue();
+        vm.IsEditable.Should().BeFalse();
+        vm.Bill.Status.Should().Be(CustomerBillStatus.Locked);
+        vm.Bill.LockedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task CustomerBillReviewViewModel_ReopenBill_CanceledBecauseDeclinedConfirmation_RemainsLocked()
+    {
+        var bill = new CustomerBill
+        {
+            Id = 100,
+            BillNumber = "BILL-REOPEN-CANCEL",
+            BillType = BillType.Customer,
+            CustomerId = 1,
+            CustomerNameSnapshot = "Test Customer",
+            Status = CustomerBillStatus.Locked,
+            LockedAt = DateTimeOffset.UtcNow,
+            GrandTotal = 50000,
+            ProductSubtotal = 50000
+        };
+
+        var billRepo = new FakeCustomerBillRepo();
+        var billingService = new FakeCustomerBillingService();
+        var jpegExporter = new FakeJpegExporter();
+        var settingsRepo = new FakeSettingsRepo();
+
+        var vm = new CustomerBillReviewViewModel(
+            bill,
+            billingService,
+            jpegExporter,
+            null,
+            null,
+            null,
+            settingsRepo,
+            null,
+            billRepo
+        );
+
+        vm.IsLocked.Should().BeTrue();
+        // Action: User enters reason but declines confirmation
+        vm.ReopenReasonFunc = (_, _) => "Sửa số lượng thực in";
+        vm.ConfirmFunc = (_, _, _, _) => System.Windows.MessageBoxResult.No;
+        await vm.ReopenBillCommand.ExecuteAsync(null);
+
+        // Assert: Billing service never called, remains locked
+        billingService.ReopenCalled.Should().BeFalse();
+        vm.IsLocked.Should().BeTrue();
+        vm.IsEditable.Should().BeFalse();
+        vm.Bill.Status.Should().Be(CustomerBillStatus.Locked);
+        vm.Bill.LockedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task SettingsViewModel_CleanupExpiredThumbnailsNow_WhenCloudSyncEnabled_CallsCloudCleanupAndPersistsTimestamp()
+    {
+        var settingsRepo = new FakeSettingsRepo
+        {
+            CurrentSettings = new AppSettings
+            {
+                RootFolder = @"C:\FakeRoot",
+                EnableCloudSync = true,
+                ThumbnailRetentionDays = 60
+            }
+        };
+
+        var fakeThumbnails = new FakeThumbnailService();
+        var fakeCloudSync = new FakeCloudSyncService();
+
+        var vm = new SettingsViewModel(
+            settingsRepo,
+            new FakeDatabaseBackupService(),
+            new FakeContextMenuService(),
+            thumbnailService: fakeThumbnails,
+            cloudSyncService: fakeCloudSync
+        );
+
+        await vm.CleanupExpiredThumbnailsNowCommand.ExecuteAsync(null);
+
+        fakeCloudSync.CleanupCalled.Should().BeTrue();
+        fakeCloudSync.LastRetentionDays.Should().Be(60);
+        fakeCloudSync.LastClearAll.Should().BeFalse();
+        settingsRepo.CurrentSettings.LastThumbnailCleanupAt.Should().NotBeNullOrWhiteSpace();
+        vm.ThumbnailCacheStatusMessage.Should().Contain("Đã dọn dẹp xong: Đã xóa 5 ảnh thumbnail quá hạn")
+            .And.Contain("Đồng thời đã dọn ảnh quá hạn trên Cloud");
+    }
+
+    [Fact]
+    public async Task SettingsViewModel_CleanupExpiredThumbnailsNow_WhenCloudFails_DoesNotFailLocalCleanup()
+    {
+        var settingsRepo = new FakeSettingsRepo
+        {
+            CurrentSettings = new AppSettings
+            {
+                RootFolder = @"C:\FakeRoot",
+                EnableCloudSync = true,
+                ThumbnailRetentionDays = 30
+            }
+        };
+
+        var fakeThumbnails = new FakeThumbnailService();
+        var fakeCloudSync = new FakeCloudSyncService { ThrowOnCleanup = true };
+
+        var vm = new SettingsViewModel(
+            settingsRepo,
+            new FakeDatabaseBackupService(),
+            new FakeContextMenuService(),
+            thumbnailService: fakeThumbnails,
+            cloudSyncService: fakeCloudSync
+        );
+        vm.ThumbnailRetentionDays = 30;
+
+        await vm.CleanupExpiredThumbnailsNowCommand.ExecuteAsync(null);
+
+        settingsRepo.CurrentSettings.LastThumbnailCleanupAt.Should().NotBeNullOrWhiteSpace();
+        vm.ThumbnailCacheStatusMessage.Should().Contain("Đã dọn dẹp xong: Đã xóa 5 ảnh thumbnail quá hạn")
+            .And.Contain("Dọn Cloud chưa hoàn tất: Simulated cloud failure");
+    }
+
+    [Fact]
+    public async Task SettingsViewModel_ClearThumbnailCache_WhenUserSelectsYes_CallsCloudCleanupWithClearAllTrue()
+    {
+        var settingsRepo = new FakeSettingsRepo
+        {
+            CurrentSettings = new AppSettings
+            {
+                RootFolder = @"C:\FakeRoot",
+                EnableCloudSync = true,
+                ThumbnailRetentionDays = 60
+            }
+        };
+
+        var fakeThumbnails = new FakeThumbnailService();
+        var fakeCloudSync = new FakeCloudSyncService();
+
+        var vm = new SettingsViewModel(
+            settingsRepo,
+            new FakeDatabaseBackupService(),
+            new FakeContextMenuService(),
+            thumbnailService: fakeThumbnails,
+            cloudSyncService: fakeCloudSync
+        );
+        vm.ClearCacheConfirmFunc = (_, _, _, _) => System.Windows.MessageBoxResult.Yes;
+
+        await vm.ClearThumbnailCacheCommand.ExecuteAsync(null);
+
+        fakeCloudSync.CleanupCalled.Should().BeTrue();
+        fakeCloudSync.LastClearAll.Should().BeTrue();
+        vm.ThumbnailCacheStatusMessage.Should().Contain("Đã xóa sạch bộ nhớ đệm máy tính: 10 file")
+            .And.Contain("Đồng thời đã dọn sạch ảnh trên Cloud");
+    }
+
+    [Fact]
+    public async Task SettingsViewModel_ClearThumbnailCache_WhenUserSelectsNo_OnlyClearsLocal()
+    {
+        var settingsRepo = new FakeSettingsRepo
+        {
+            CurrentSettings = new AppSettings
+            {
+                RootFolder = @"C:\FakeRoot",
+                EnableCloudSync = true,
+                ThumbnailRetentionDays = 60
+            }
+        };
+
+        var fakeThumbnails = new FakeThumbnailService();
+        var fakeCloudSync = new FakeCloudSyncService();
+
+        var vm = new SettingsViewModel(
+            settingsRepo,
+            new FakeDatabaseBackupService(),
+            new FakeContextMenuService(),
+            thumbnailService: fakeThumbnails,
+            cloudSyncService: fakeCloudSync
+        );
+        vm.ClearCacheConfirmFunc = (_, _, _, _) => System.Windows.MessageBoxResult.No;
+
+        await vm.ClearThumbnailCacheCommand.ExecuteAsync(null);
+
+        fakeCloudSync.CleanupCalled.Should().BeFalse();
+        vm.ThumbnailCacheStatusMessage.Should().Contain("Đã xóa sạch bộ nhớ đệm máy tính: 10 file");
+        vm.ThumbnailCacheStatusMessage.Should().NotContain("Cloud");
+    }
+
+    [Fact]
+    public async Task SettingsViewModel_ClearThumbnailCache_WhenUserCancels_DoesNothing()
+    {
+        var settingsRepo = new FakeSettingsRepo
+        {
+            CurrentSettings = new AppSettings
+            {
+                RootFolder = @"C:\FakeRoot",
+                EnableCloudSync = true
+            }
+        };
+
+        var fakeThumbnails = new FakeThumbnailService();
+        var fakeCloudSync = new FakeCloudSyncService();
+
+        var vm = new SettingsViewModel(
+            settingsRepo,
+            new FakeDatabaseBackupService(),
+            new FakeContextMenuService(),
+            thumbnailService: fakeThumbnails,
+            cloudSyncService: fakeCloudSync
+        );
+        vm.ClearCacheConfirmFunc = (_, _, _, _) => System.Windows.MessageBoxResult.Cancel;
+
+        await vm.ClearThumbnailCacheCommand.ExecuteAsync(null);
+
+        fakeCloudSync.CleanupCalled.Should().BeFalse();
+        vm.ThumbnailCacheStatusMessage.Should().BeEmpty();
     }
 }

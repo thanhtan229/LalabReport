@@ -192,6 +192,23 @@
     </div>
   </div>
 
+  <!-- ORDER GALLERY MODAL -->
+  <div id="galleryModal" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 hidden flex flex-col p-0 sm:p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-none sm:rounded-2xl max-w-2xl w-full mx-auto h-full sm:max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 sticky top-0 z-10">
+        <div class="min-w-0 pr-2">
+          <h3 id="galleryModalTitle" class="font-bold text-sm text-slate-100 truncate">Thư viện ảnh in</h3>
+          <p id="galleryModalSubtitle" class="text-xs text-slate-400 truncate"></p>
+        </div>
+        <button onclick="closeGalleryModal()" class="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div id="galleryModalBody" class="flex-1 overflow-y-auto p-3 space-y-3">
+      </div>
+    </div>
+  </div>
+
   <!-- NOTE EDIT MODAL -->
   <div id="noteModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm p-4 space-y-3 shadow-xl">
@@ -246,32 +263,50 @@
       } catch { }
     }
 
-    async function triggerRemotePrint(orderId, billId = null) {
-      const o = cachedOrders.find(x => x.id === orderId);
-      const name = o ? (o.customerName || o.orderCode) : `đơn #${orderId}`;
-      if (!confirm(`Gửi lệnh in tem cho "${name}" tới máy in nhiệt tại xưởng? Nếu lệnh trước bị gián đoạn, hãy kiểm tra tem/máy in trước khi gửi lại.`)) {
+    async function triggerRemotePrint(orderId, billId = null, btn = null) {
+      if (!orderId && billId) {
+        const matchingOrder = cachedOrders.find(x => x.customerBillId === billId);
+        if (matchingOrder) orderId = matchingOrder.id;
+      }
+
+      const printUrl = orderId ? `/api/orders/${orderId}/remote-print` : (billId ? `/api/bills/${billId}/remote-print` : null);
+      if (!printUrl) {
+        showToast('❌ Không tìm thấy thông tin đơn hàng hoặc hóa đơn để in tem.', false);
         return;
+      }
+
+      let originalHtml = '';
+      if (btn) {
+        originalHtml = btn.innerHTML;
+        btn.innerHTML = '<span>⏳ Đang in...</span>';
+        btn.disabled = true;
       }
 
       showToast('⏳ Đang gửi lệnh in tem...');
       try {
-        const res = await fetch(`/api/orders/${orderId}/remote-print`, {
+        const res = await fetch(printUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + authToken
           },
-          body: JSON.stringify({ billId: billId })
+          body: orderId ? JSON.stringify({ billId: billId || undefined }) : undefined
         });
         const data = await res.json();
         if (res.ok && data.success) {
+          if (navigator.vibrate) navigator.vibrate([80, 50, 80]);
           showToast('✅ ' + (data.message || 'Đã gửi lệnh in tem tới máy xưởng!'), true);
           closePreviewModal();
         } else {
           showToast('❌ ' + (data.message || 'Không thể gửi lệnh in tem'), false);
         }
       } catch (err) {
-        showToast('❌ Lỗi kết nối khi gửi lệnh in tem', false);
+        showToast('❌ Lỗi kết nối khi gửi lệnh in tem: ' + err.message, false);
+      } finally {
+        if (btn) {
+          btn.innerHTML = originalHtml || '<span>🖨️ In tem</span>';
+          btn.disabled = false;
+        }
       }
     }
 
@@ -589,7 +624,7 @@
         .replace(/'/g, '&#039;');
     }
 
-    function renderOrders(orders, updateStats = true) {
+    function renderOrders(orders = cachedOrders, updateStats = true) {
       const listEl = document.getElementById('orderList');
       if (updateStats) {
         const total = cachedOrders.length;
@@ -644,15 +679,11 @@
           actions.push(`<button onclick="openNoteModal(${o.id})" class="text-xs text-slate-400 hover:text-slate-200 bg-slate-800/60 border border-slate-700/60 px-2 py-1 rounded-lg active:bg-slate-700">+ Ghi chú</button>`);
         }
 
-        // Nút In tem nhiệt
-        if (IS_CLOUD_BUILD) {
-          actions.push(`<button onclick="triggerRemotePrint(${o.id}, ${o.customerBillId || 'null'})" id="btnInTem_${o.id}" class="text-xs bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1 rounded-lg active:scale-95 transition font-semibold flex items-center space-x-1 shadow-sm" title="Gửi lệnh in tem nhiệt tới máy xưởng"><span>🏷️ In tem</span></button>`);
+        // Nút In tem nhiệt (Mở popup xem trước tem, nhấn In tem trong popup mới in thật sự)
+        if (o.customerBillId && currentRole === 'Admin') {
+          actions.push(`<button onclick="viewLabel(${o.customerBillId}, ${o.id})" id="btnInTem_${o.id}" class="text-xs bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1 rounded-lg active:scale-95 transition font-semibold flex items-center space-x-1 shadow-sm" title="Xem trước và in tem nhiệt bưu kiện"><span>🏷️ In tem</span></button>`);
         } else {
-          if (o.customerBillId) {
-            actions.push(`<button onclick="viewLabel(${o.customerBillId}, ${o.id})" id="btnInTem_${o.id}" class="text-xs bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1 rounded-lg active:scale-95 transition font-semibold flex items-center space-x-1 shadow-sm" title="Xem trước và in tem nhiệt bưu kiện (75x100mm)"><span>🏷️ In tem</span></button>`);
-          } else {
-            actions.push(`<button onclick="viewOrderLabel(${o.id})" id="btnInTem_${o.id}" class="text-xs bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1 rounded-lg active:scale-95 transition font-semibold flex items-center space-x-1 shadow-sm" title="Xem trước và in tem nhiệt đóng gói (75x100mm)"><span>🏷️ In tem</span></button>`);
-          }
+          actions.push(`<button onclick="viewOrderLabel(${o.id})" id="btnInTem_${o.id}" class="text-xs bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-2.5 py-1 rounded-lg active:scale-95 transition font-semibold flex items-center space-x-1 shadow-sm" title="Xem trước và in tem nhiệt đóng gói"><span>🏷️ In tem</span></button>`);
         }
 
         if (o.isDelivered) {
@@ -660,6 +691,7 @@
         } else {
           actions.push(`<button onclick="toggleDelivered(${o.id})" class="text-xs bg-slate-800 border border-slate-700 text-slate-200 px-2.5 py-1 rounded-lg active:bg-slate-700" title="Chưa giao - Nhấn để đánh dấu ĐÃ GIAO">🚚 Chưa giao</button>`);
         }
+        actions.push(`<button onclick="openOrderGallery(${o.id})" class="text-xs text-indigo-300 hover:text-indigo-100 bg-indigo-950/70 border border-indigo-800/80 px-2.5 py-1 rounded-lg active:scale-95 transition font-semibold flex items-center space-x-1 shadow-sm" title="Xem danh sách ảnh in"><span>🖼️ Xem ảnh</span></button>`);
         if (o.customerBillId) {
           actions.push(`<button onclick="viewBill(${o.customerBillId})" class="text-xs bg-sky-950 border border-sky-800/60 text-sky-300 px-2.5 py-1 rounded-lg active:bg-sky-900">Xem Bill</button>`);
         }
@@ -838,6 +870,485 @@
       }
     }
 
+    let currentGalleryOrderId = null;
+    let currentGalleryVersion = null;
+    let currentGalleryCursor = null;
+    let currentGalleryObserver = null;
+    let currentGalleryTouched = new Set();
+    let currentGalleryPollTimer = null;
+    let activeBatchPollTimers = [];
+    let currentGalleryAbort = null;
+
+    function abortGalleryRequests() {
+      if (currentGalleryAbort) {
+        currentGalleryAbort.abort();
+        currentGalleryAbort = null;
+      }
+    }
+
+    function clearAllBatchPollTimers() {
+      activeBatchPollTimers.forEach(t => clearInterval(t));
+      activeBatchPollTimers = [];
+    }
+
+    function closeGalleryModal() {
+      const modal = document.getElementById('galleryModal');
+      if (modal) modal.classList.add('hidden');
+      abortGalleryRequests();
+      if (currentGalleryObserver) {
+        currentGalleryObserver.disconnect();
+        currentGalleryObserver = null;
+      }
+      if (currentGalleryPollTimer) {
+        clearInterval(currentGalleryPollTimer);
+        currentGalleryPollTimer = null;
+      }
+      clearAllBatchPollTimers();
+      currentGalleryOrderId = null;
+    }
+
+    async function openOrderGallery(orderId) {
+      abortGalleryRequests();
+      currentGalleryAbort = new AbortController();
+      currentGalleryOrderId = orderId;
+      currentGalleryCursor = null;
+      currentGalleryTouched.clear();
+      if (currentGalleryPollTimer) {
+        clearInterval(currentGalleryPollTimer);
+        currentGalleryPollTimer = null;
+      }
+      clearAllBatchPollTimers();
+
+      const modal = document.getElementById('galleryModal');
+      const title = document.getElementById('galleryModalTitle');
+      const subtitle = document.getElementById('galleryModalSubtitle');
+      const body = document.getElementById('galleryModalBody');
+
+      modal.classList.remove('hidden');
+      title.innerText = 'Thư viện ảnh in';
+      subtitle.innerText = 'Đang tải dữ liệu...';
+      body.innerHTML = `
+        <div class="py-12 flex flex-col items-center justify-center space-y-3">
+          <div class="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+          <div class="text-xs text-slate-400">Đang đọc danh sách ảnh in từ máy chủ...</div>
+        </div>
+      `;
+
+      try {
+        const res = await fetch(`/api/orders/${orderId}/gallery/requests`, {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + authToken },
+          signal: currentGalleryAbort.signal
+        });
+        if (currentGalleryOrderId !== orderId) return;
+
+        if (res.status === 202) {
+          const reqData = await res.json().catch(() => ({}));
+          const manifestRequestId = reqData.requestId;
+          subtitle.innerText = 'Đang đợi máy tính xưởng tải lên dữ liệu...';
+          body.innerHTML = `
+            <div class="py-12 flex flex-col items-center justify-center space-y-3">
+              <div class="w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+              <div class="text-xs text-amber-300 font-medium">Đang yêu cầu máy tính xưởng lập danh sách ảnh...</div>
+              <div class="text-[11px] text-slate-400 text-center max-w-xs">Đang kiểm tra kết nối với PC xưởng theo chu kỳ 2 giây.</div>
+            </div>
+          `;
+
+          let pollCount = 0;
+          currentGalleryPollTimer = setInterval(async () => {
+            pollCount++;
+            if (!currentGalleryOrderId || currentGalleryOrderId !== orderId || pollCount > 30) {
+              clearInterval(currentGalleryPollTimer);
+              currentGalleryPollTimer = null;
+              if (pollCount > 30 && currentGalleryOrderId === orderId) {
+                body.innerHTML = `
+                  <div class="p-6 text-center text-amber-400 text-sm space-y-3">
+                    <div>Hết thời gian chờ máy tính xưởng phản hồi. Vui lòng kiểm tra PC xưởng có đang mở và kết nối mạng không.</div>
+                    <button onclick="openOrderGallery(${orderId})" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-xl font-medium transition">
+                      Thử lại
+                    </button>
+                  </div>
+                `;
+              }
+              return;
+            }
+
+            try {
+              if (manifestRequestId) {
+                const checkRes = await fetch(`/api/gallery/requests/${manifestRequestId}`, {
+                  headers: { 'Authorization': 'Bearer ' + authToken },
+                  signal: currentGalleryAbort ? currentGalleryAbort.signal : undefined
+                });
+                if (checkRes.ok) {
+                  const job = await checkRes.json();
+                  if (job.status === 'READY') {
+                    clearInterval(currentGalleryPollTimer);
+                    currentGalleryPollTimer = null;
+                    openOrderGallery(orderId);
+                    return;
+                  } else if (job.status === 'FAILED') {
+                    clearInterval(currentGalleryPollTimer);
+                    currentGalleryPollTimer = null;
+                    body.innerHTML = `
+                      <div class="p-6 text-center text-rose-400 text-sm space-y-3">
+                        <div>⚠️ ${escapeHtml(job.errorMessage || 'Máy tính xưởng không thể lập danh sách ảnh.')}</div>
+                        <button onclick="openOrderGallery(${orderId})" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-xl font-medium transition">
+                          Thử lại
+                        </button>
+                      </div>
+                    `;
+                    return;
+                  }
+                }
+              } else {
+                const checkRes = await fetch(`/api/orders/${orderId}/gallery/requests`, {
+                  method: 'POST',
+                  headers: { 'Authorization': 'Bearer ' + authToken },
+                  signal: currentGalleryAbort ? currentGalleryAbort.signal : undefined
+                });
+                if (checkRes.ok && checkRes.status === 200) {
+                  clearInterval(currentGalleryPollTimer);
+                  currentGalleryPollTimer = null;
+                  openOrderGallery(orderId);
+                  return;
+                }
+              }
+            } catch (err) {}
+          }, 2000);
+          return;
+        }
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          body.innerHTML = `<div class="p-4 text-center text-rose-400 text-sm">${escapeHtml(err.message || 'Không thể tải thư viện ảnh.')}</div>`;
+          return;
+        }
+
+        const data = await res.json();
+        if (currentGalleryOrderId !== orderId) return;
+        const manifest = data.manifest || data;
+        currentGalleryVersion = manifest.manifestVersion;
+        title.innerText = `[${manifest.orderCode || ('Đơn #' + orderId)}]`;
+        subtitle.innerText = `Tổng cộng: ${manifest.totalPrintableFiles || manifest.totalImageCount || 0} ảnh`;
+
+        const totalFiles = manifest.totalPrintableFiles || manifest.totalImageCount || 0;
+        const noticeHtml = manifest.notice ? `<div class="p-3 bg-amber-950/60 border border-amber-800/80 rounded-xl text-xs text-amber-200 mb-3">⚠️ ${escapeHtml(manifest.notice)}</div>` : '';
+
+        if (totalFiles === 0 && !manifest.hasUnresolvedFolders) {
+          body.innerHTML = `
+            ${noticeHtml}
+            <div class="py-12 text-center text-slate-400 text-sm">
+              Không có ảnh JPG/JPEG nào trong các thư mục in đã chọn.
+            </div>
+          `;
+          return;
+        }
+
+        // Render groups container
+        let groupsHtml = '';
+        (manifest.groups || []).forEach(g => {
+          const gKey = String(g.orderItemId || g.specificationName || g.groupKey);
+          const title = g.specificationName || g.title || 'Quy cách';
+          const folder = g.selectedPrintFolderRelativePath || g.folderName || g.folderPath || '';
+          const count = g.imageCount ?? (g.items ? g.items.length : 0);
+          const isResolved = g.isFolderResolved !== false;
+          const warnHtml = !isResolved ? `<div class="p-2 bg-rose-950/60 border border-rose-800/80 rounded text-[11px] text-rose-300 mb-2">⚠️ ${escapeHtml(g.resolutionMessage || 'Chưa xác định')}</div>` : '';
+          groupsHtml += `
+            <div class="bg-slate-950/80 rounded-xl border border-slate-800/80 p-3 mb-3">
+              <div class="flex justify-between items-center mb-2.5 pb-1.5 border-b border-slate-800">
+                <div class="min-w-0 pr-2">
+                  <span class="font-bold text-xs text-slate-200">${escapeHtml(title)}</span>
+                  <span class="text-[11px] text-slate-400 block truncate">${escapeHtml(folder)}</span>
+                </div>
+                <span class="text-[10px] font-semibold bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full shrink-0">${count} ảnh</span>
+              </div>
+              ${warnHtml}
+              <div id="gallery-group-${escapeHtml(gKey)}" class="grid grid-cols-3 gap-2"></div>
+            </div>
+          `;
+        });
+
+        body.innerHTML = `
+          ${noticeHtml}
+          <div>${groupsHtml}</div>
+          <div id="galleryLoadMoreContainer" class="py-3 text-center"></div>
+        `;
+
+        await loadCloudGalleryPage(orderId, manifest.manifestVersion);
+      } catch (e) {
+        if (e.name === 'AbortError' || currentGalleryOrderId !== orderId) return;
+        body.innerHTML = `<div class="p-4 text-center text-rose-400 text-sm">Lỗi kết nối máy chủ: ${escapeHtml(e.message)}</div>`;
+      }
+    }
+
+    async function loadCloudGalleryPage(orderId, version) {
+      if (!currentGalleryAbort || currentGalleryVersion !== version || currentGalleryOrderId !== orderId) return;
+      const signal = currentGalleryAbort.signal;
+      const loadMoreContainer = document.getElementById('galleryLoadMoreContainer');
+      if (loadMoreContainer) {
+        loadMoreContainer.innerHTML = '<div class="text-xs text-slate-400">Đang tải ảnh...</div>';
+      }
+
+      try {
+        let url = `/api/orders/${orderId}/gallery?limit=24`;
+        if (currentGalleryCursor) {
+          url += `&cursor=${encodeURIComponent(currentGalleryCursor)}`;
+        }
+
+        const res = await fetch(url, {
+          headers: { 'Authorization': 'Bearer ' + authToken },
+          signal: signal
+        });
+        if (currentGalleryOrderId !== orderId) return;
+        if (!res.ok) {
+          if (loadMoreContainer) {
+            loadMoreContainer.innerHTML = `<button onclick="loadCloudGalleryPage(${orderId}, '${version}')" class="text-xs bg-rose-700 hover:bg-rose-600 text-white font-semibold px-4 py-2 rounded-xl">⚠️ Lỗi tải ảnh - Thử lại</button>`;
+          }
+          return;
+        }
+
+        const page = await res.json();
+        currentGalleryCursor = page.nextCursor;
+
+        // Collect missing items in this batch to request from PC if needed
+        const missingItems = [];
+
+        page.items.forEach(item => {
+          const itemKey = String(item.orderItemId || item.specificationName || item.groupKey);
+          let groupContainer = document.getElementById(`gallery-group-${itemKey}`);
+          if (!groupContainer) {
+            groupContainer = document.querySelector('[id^="gallery-group-"]');
+          }
+
+          if (groupContainer) {
+            const card = document.createElement('div');
+            card.className = 'aspect-square bg-slate-900 rounded-lg overflow-hidden border border-slate-800/80 flex flex-col items-center justify-between p-1 relative shadow-sm hover:border-slate-700 transition';
+            card.setAttribute('data-file-id', item.fileId);
+
+            if (item.status === 'Ready' && item.thumbnailUrl) {
+              const authParam = authToken ? ((item.thumbnailUrl.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(authToken)) : '';
+              const fullImgUrl = item.thumbnailUrl + authParam;
+              card.innerHTML = `
+                <div class="flex-1 w-full flex items-center justify-center overflow-hidden" id="img-holder-${item.fileId}">
+                  <img src="${fullImgUrl}" class="w-full h-full object-contain" loading="lazy" onerror="this.onerror=null; this.src=''; this.classList.add('hidden'); this.nextElementSibling.classList.remove('hidden');" alt="${escapeHtml(item.fileName)}"/>
+                  <div class="hidden text-rose-400 text-[10px] text-center p-1 font-mono cursor-pointer" onclick="retryGalleryBatch(${orderId}, '${currentGalleryVersion || ''}', ['${item.fileId}'], '${item.version || ''}')">⚠️ Lỗi (Chạm thử lại)</div>
+                </div>
+                <div class="w-full text-center text-[10px] text-slate-300 font-mono truncate px-0.5 pt-0.5" title="${escapeHtml(item.fileName)}">
+                  ${escapeHtml(item.fileName)}
+                </div>
+              `;
+            } else {
+              missingItems.push({ fileId: item.fileId, version: item.version });
+              card.innerHTML = `
+                <div class="flex-1 w-full flex items-center justify-center overflow-hidden text-slate-500 font-mono text-[11px]" id="img-holder-${item.fileId}">
+                  <div class="flex flex-col items-center space-y-1">
+                    <div class="w-4 h-4 border border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
+                    <span class="text-[9px] text-slate-400">Đang chờ...</span>
+                  </div>
+                </div>
+                <div class="w-full text-center text-[10px] text-slate-300 font-mono truncate px-0.5 pt-0.5" title="${escapeHtml(item.fileName)}">
+                  ${escapeHtml(item.fileName)}
+                </div>
+              `;
+            }
+            groupContainer.appendChild(card);
+          }
+        });
+
+        setupCloudTouchObserver(orderId);
+
+        // If some items in this page are not ready, request batch and poll until READY
+        if (missingItems.length > 0) {
+          const missingFileIds = missingItems.map(m => m.fileId);
+          fetch(`/api/orders/${orderId}/gallery/batches`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + authToken
+            },
+            body: JSON.stringify({ manifestVersion: version, fileIds: missingFileIds }),
+            signal: signal
+          })
+          .then(r => r.json())
+          .then(batchData => {
+            if (currentGalleryOrderId !== orderId) return;
+            if (batchData && batchData.ready) {
+              renderReadyGalleryItems(orderId, missingItems);
+            } else if (batchData && batchData.requestId) {
+              pollGalleryBatchJob(orderId, batchData.requestId, missingItems, version);
+            } else {
+              renderFailedGalleryItems(orderId, version, missingItems);
+            }
+          })
+          .catch((err) => {
+            if (err && err.name === 'AbortError') return;
+            if (currentGalleryOrderId !== orderId) return;
+            renderFailedGalleryItems(orderId, version, missingItems);
+          });
+        }
+
+        if (loadMoreContainer) {
+          if (page.hasMore && page.nextCursor) {
+            loadMoreContainer.innerHTML = `
+              <button onclick="loadCloudGalleryPage(${orderId}, '${version}')" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-4 py-2 rounded-xl border border-slate-700 transition">
+                Tải thêm 24 ảnh tiếp theo
+              </button>
+            `;
+          } else {
+            loadMoreContainer.innerHTML = '<div class="text-[11px] text-slate-400">Đã hiển thị tất cả ảnh.</div>';
+          }
+        }
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;
+        if (loadMoreContainer) {
+          loadMoreContainer.innerHTML = `<button onclick="loadCloudGalleryPage(${orderId}, '${version}')" class="text-xs bg-rose-700 hover:bg-rose-600 text-white font-semibold px-4 py-2 rounded-xl">⚠️ Không thể tải thêm ảnh - Thử lại</button>`;
+        }
+      }
+    }
+
+    function renderReadyGalleryItems(orderId, items) {
+      items.forEach(it => {
+        const holder = document.getElementById(`img-holder-${it.fileId}`);
+        if (holder) {
+          const authParam = authToken ? ('?token=' + encodeURIComponent(authToken)) : '';
+          const vParam = it.version ? ((authParam ? '&' : '?') + 'v=' + encodeURIComponent(it.version)) : '';
+          const imgUrl = `/api/orders/${orderId}/gallery/images/${it.fileId}${authParam}${vParam}`;
+          holder.innerHTML = `
+            <img src="${imgUrl}" class="w-full h-full object-contain" loading="lazy" onerror="this.onerror=null; this.classList.add('hidden'); this.nextElementSibling.classList.remove('hidden');" alt="" />
+            <div class="hidden text-rose-400 text-[10px] text-center p-1 font-mono cursor-pointer" onclick="retryGalleryBatch(${orderId}, '${currentGalleryVersion || ''}', ['${it.fileId}'], '${it.version || ''}')">⚠️ Lỗi (Chạm thử lại)</div>
+          `;
+        }
+      });
+    }
+
+    function renderFailedGalleryItems(orderId, version, items) {
+      items.forEach(it => {
+        const holder = document.getElementById(`img-holder-${it.fileId}`);
+        if (holder) {
+          holder.innerHTML = `<span class="text-rose-400 text-[10px] text-center p-1 font-mono cursor-pointer" onclick="retryGalleryBatch(${orderId}, '${version || ''}', ['${it.fileId}'], '${it.version || ''}')">⚠️ Lỗi (Chạm thử lại)</span>`;
+        }
+      });
+    }
+
+    function retryGalleryBatch(orderId, version, fileIds, itemVersion) {
+      fileIds.forEach(fid => {
+        const holder = document.getElementById(`img-holder-${fid}`);
+        if (holder) {
+          holder.innerHTML = `
+            <div class="flex flex-col items-center space-y-1">
+              <div class="w-4 h-4 border border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
+              <span class="text-[9px] text-slate-400">Đang thử lại...</span>
+            </div>
+          `;
+        }
+      });
+      fetch(`/api/orders/${orderId}/gallery/batches`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + authToken
+        },
+        body: JSON.stringify({ manifestVersion: version, fileIds: fileIds }),
+        signal: currentGalleryAbort ? currentGalleryAbort.signal : undefined
+      })
+      .then(r => r.json())
+      .then(batchData => {
+        if (currentGalleryOrderId !== orderId) return;
+        const items = fileIds.map(fid => ({ fileId: fid, version: itemVersion }));
+        if (batchData && batchData.ready) {
+          renderReadyGalleryItems(orderId, items);
+        } else if (batchData && batchData.requestId) {
+          pollGalleryBatchJob(orderId, batchData.requestId, items, version);
+        } else {
+          renderFailedGalleryItems(orderId, version, items);
+        }
+      })
+      .catch((err) => {
+        if (err && err.name === 'AbortError') return;
+        if (currentGalleryOrderId !== orderId) return;
+        const items = fileIds.map(fid => ({ fileId: fid, version: itemVersion }));
+        renderFailedGalleryItems(orderId, version, items);
+      });
+    }
+
+    function pollGalleryBatchJob(orderId, requestId, missingItems, version) {
+      let attempts = 0;
+      const pollTimer = setInterval(async () => {
+        attempts++;
+        if (attempts > 30 || !currentGalleryOrderId || currentGalleryOrderId !== orderId) {
+          clearInterval(pollTimer);
+          const idx = activeBatchPollTimers.indexOf(pollTimer);
+          if (idx >= 0) activeBatchPollTimers.splice(idx, 1);
+          if (currentGalleryOrderId === orderId && attempts > 30) {
+            missingItems.forEach(it => {
+              const holder = document.getElementById(`img-holder-${it.fileId}`);
+              if (holder && holder.querySelector('.animate-spin')) {
+                holder.innerHTML = `<span class="text-amber-400 text-[10px] text-center p-1 font-mono cursor-pointer" onclick="retryGalleryBatch(${orderId}, '${version || ''}', ['${it.fileId}'], '${it.version || ''}')">⚠️ Quá hạn (Chạm thử lại)</span>`;
+              }
+            });
+          }
+          return;
+        }
+
+        try {
+          const res = await fetch(`/api/gallery/requests/${requestId}`, {
+            headers: { 'Authorization': 'Bearer ' + authToken },
+            signal: currentGalleryAbort ? currentGalleryAbort.signal : undefined
+          });
+          if (res.ok) {
+            const job = await res.json();
+            if (job && job.status === 'READY') {
+              clearInterval(pollTimer);
+              const idx = activeBatchPollTimers.indexOf(pollTimer);
+              if (idx >= 0) activeBatchPollTimers.splice(idx, 1);
+              renderReadyGalleryItems(orderId, missingItems);
+            } else if (job && job.status === 'FAILED') {
+              clearInterval(pollTimer);
+              const idx = activeBatchPollTimers.indexOf(pollTimer);
+              if (idx >= 0) activeBatchPollTimers.splice(idx, 1);
+              renderFailedGalleryItems(orderId, version, missingItems);
+            }
+          }
+        } catch (e) {}
+      }, 2000);
+      activeBatchPollTimers.push(pollTimer);
+    }
+
+    function setupCloudTouchObserver(orderId) {
+      if (currentGalleryObserver) {
+        currentGalleryObserver.disconnect();
+      }
+
+      currentGalleryObserver = new IntersectionObserver((entries) => {
+        const touchedNow = [];
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const fileId = entry.target.getAttribute('data-file-id');
+            if (fileId && !currentGalleryTouched.has(fileId)) {
+              currentGalleryTouched.add(fileId);
+              touchedNow.push(fileId);
+            }
+          }
+        });
+
+        if (touchedNow.length > 0) {
+          fetch(`/api/orders/${orderId}/gallery/touch`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + authToken
+            },
+            body: JSON.stringify({ fileIds: touchedNow }),
+            signal: currentGalleryAbort ? currentGalleryAbort.signal : undefined
+          }).catch(() => {});
+        }
+      }, { threshold: 0.1 });
+
+      document.querySelectorAll('#galleryModalBody [data-file-id]').forEach(el => {
+        currentGalleryObserver.observe(el);
+      });
+    }
+
     function viewThumbnail(orderId) {
       const o = cachedOrders.find(x => x.id === orderId);
       if (!o) return;
@@ -856,7 +1367,10 @@
           </div>
           <div class="flex justify-between items-center pt-1">
             <span class="text-xs text-slate-400">Tổng: <strong class="text-slate-200">${o.totalQuantity}</strong> tấm</span>
-            <a href="/api/orders/${orderId}/thumbnail?token=${encodeURIComponent(authToken)}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 flex items-center space-x-1 bg-indigo-950/60 border border-indigo-800/60 px-2.5 py-1 rounded">
+            <button onclick="closePreviewModal(); openOrderGallery(${orderId});" class="text-xs text-white bg-indigo-600 hover:bg-indigo-500 font-semibold px-3 py-1 rounded-lg flex items-center space-x-1 shadow transition">
+                <span>🖼️ Xem toàn bộ ảnh</span>
+              </button>
+              <a href="/api/orders/${orderId}/thumbnail?token=${encodeURIComponent(authToken)}" target="_blank" class="text-xs text-indigo-400 hover:text-indigo-300 flex items-center space-x-1 bg-indigo-950/60 border border-indigo-800/60 px-2.5 py-1 rounded">
               <span>🔍 Mở ảnh rời</span>
             </a>
           </div>
@@ -940,6 +1454,9 @@
 
             ${currentRole === 'Admin' ? `<!-- Financial media -->
             <div class="space-y-2 pt-2">
+              <button onclick="viewLabel(${billId}, null, true)" class="w-full flex items-center justify-center space-x-1.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold py-2.5 rounded-xl text-xs transition shadow-sm">
+                <span>🏷️ In tem giao hàng</span>
+              </button>
 ${b.hasExportFile ? `              <a href="/api/bills/${billId}/image?token=${authToken}" target="_blank" class="w-full flex items-center justify-center space-x-2 bg-sky-600 hover:bg-sky-500 text-white font-medium py-2.5 rounded-xl text-xs transition">
                 <span>Mở ảnh Hóa đơn (JPG)</span>
               </a>` : '<div>Chưa có ảnh hóa đơn.</div>'}
@@ -978,29 +1495,57 @@ ${b.hasPaymentQr ? `              <button onclick="showBillQr(${billId})" class=
       }
     }
 
-    function viewLabel(billId, orderId) {
+    function handleLabelImageError(img, fallbackOrderId) {
+      if (fallbackOrderId && !img.dataset.fallback) {
+        img.dataset.fallback = '1';
+        img.src = '/api/orders/' + fallbackOrderId + '/label?token=' + encodeURIComponent(authToken);
+        return;
+      }
+      const parent = img.parentElement;
+      if (parent) {
+        parent.innerHTML = '<div class="text-xs text-rose-400 py-6 text-center font-medium">Không thể tạo hình ảnh tem giao hàng.</div>';
+      }
+    }
+
+    function viewLabel(billId, orderId, fromBill = false) {
+      if (!orderId && typeof cachedOrders !== 'undefined' && Array.isArray(cachedOrders)) {
+        const matchingOrder = cachedOrders.find(x => x.customerBillId === billId);
+        if (matchingOrder) orderId = matchingOrder.id;
+      }
       const modal = document.getElementById('previewModal');
       const body = document.getElementById('previewModalBody');
-      document.getElementById('previewModalTitle').innerText = 'Xem trước tem giao hàng (75x100mm)';
+      document.getElementById('previewModalTitle').innerText = 'Xem trước tem giao hàng';
       modal.classList.remove('hidden');
 
+      const isDesktopOnline = !IS_CLOUD_BUILD || typeof window === 'undefined' || !window.systemStatus || window.systemStatus.isDesktopOnline !== false;
+      const offlineWarning = !isDesktopOnline ? `
+        <div class="w-full bg-amber-950/60 border border-amber-800/80 rounded-xl p-2.5 text-center text-xs text-amber-200">
+          ⚠️ Máy tính xưởng hiện đang ngoại tuyến. Lệnh in sẽ lưu trong hàng đợi và tự động in khi PC xưởng kết nối lại.
+        </div>
+      ` : '';
+
       const printBtnHtml = IS_CLOUD_BUILD
-        ? `<button onclick="triggerRemotePrint(${orderId || 'null'}, ${billId})" class="py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 transition text-slate-950 font-bold rounded-xl text-xs shadow-lg shadow-amber-950/50 flex items-center justify-center space-x-1" title="Gửi lệnh in tem nhiệt tới máy xưởng"><span>🖨️ In Từ Xa (Cloud)</span></button>`
-        : `<button onclick="printBillLabel(${billId}, this, ${orderId || 'null'})" class="py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 transition text-slate-950 font-bold rounded-xl text-xs shadow-lg shadow-amber-950/50 flex items-center justify-center space-x-1"><span>🖨️ In Tem</span></button>`;
+        ? `<button onclick="triggerRemotePrint(${orderId || 'null'}, ${billId}, this)" class="py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 transition text-slate-950 font-bold rounded-xl text-xs shadow-lg shadow-amber-950/50 flex items-center justify-center space-x-1"><span>🖨️ In tem</span></button>`
+        : `<button onclick="printBillLabel(${billId}, this, ${orderId || 'null'})" class="py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 transition text-slate-950 font-bold rounded-xl text-xs shadow-lg shadow-amber-950/50 flex items-center justify-center space-x-1"><span>🖨️ In tem</span></button>`;
+
+      const backBtnHtml = fromBill
+        ? `<button onclick="viewBill(${billId})" class="py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 active:scale-95 transition text-slate-300 font-semibold rounded-xl text-xs flex items-center justify-center space-x-1"><span>← Quay lại Bill</span></button>`
+        : `<button onclick="closePreviewModal()" class="py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 active:scale-95 transition text-slate-300 font-semibold rounded-xl text-xs flex items-center justify-center"><span>Đóng</span></button>`;
+
+      const labelUrl = `/api/bills/${billId}/label?token=${encodeURIComponent(authToken)}${orderId ? '&orderId=' + encodeURIComponent(orderId) : ''}`;
 
       body.innerHTML = `
         <div class="flex flex-col items-center space-y-3">
+          ${offlineWarning}
           <div class="w-full flex justify-center bg-slate-950/60 rounded-xl p-2 border border-slate-800">
-            <img src="/api/bills/${billId}/label?token=${encodeURIComponent(authToken)}" alt="Tem giao hàng" class="rounded-lg border border-slate-700 max-w-full shadow-lg" onerror="this.parentElement.innerHTML='<div class=\'text-xs text-rose-400 py-6\'>Không thể tạo hình ảnh tem giao hàng.</div>'">
+            <img src="${labelUrl}" alt="Tem giao hàng" class="w-full h-auto max-h-[55vh] object-contain rounded-lg border border-slate-700 max-w-full shadow-lg" onerror="handleLabelImageError(this, ${orderId || 'null'})">
           </div>
           <div class="text-[11px] text-slate-400 text-center flex items-center justify-center space-x-1">
-            <span>🏷️ Tem nhiệt 75x100mm</span>
+            <span>🏷️ Tem nhiệt bưu kiện</span>
             <span class="text-sky-400 font-medium">(Tự động đánh dấu ĐÃ GIAO)</span>
           </div>
           <div class="w-full grid grid-cols-2 gap-2 pt-1">
-            <button onclick="closePreviewModal()" class="py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 active:scale-95 transition text-slate-300 font-semibold rounded-xl text-xs flex items-center justify-center">
-              <span>Đóng</span>
-            </button>
+            ${backBtnHtml}
             ${printBtnHtml}
           </div>
         </div>
@@ -1010,20 +1555,28 @@ ${b.hasPaymentQr ? `              <button onclick="showBillQr(${billId})" class=
     function viewOrderLabel(orderId) {
       const modal = document.getElementById('previewModal');
       const body = document.getElementById('previewModalBody');
-      document.getElementById('previewModalTitle').innerText = 'Xem trước tem đóng gói (75x100mm)';
+      document.getElementById('previewModalTitle').innerText = 'Xem trước tem đóng gói';
       modal.classList.remove('hidden');
 
+      const isDesktopOnline = !IS_CLOUD_BUILD || typeof window === 'undefined' || !window.systemStatus || window.systemStatus.isDesktopOnline !== false;
+      const offlineWarning = !isDesktopOnline ? `
+        <div class="w-full bg-amber-950/60 border border-amber-800/80 rounded-xl p-2.5 text-center text-xs text-amber-200">
+          ⚠️ Máy tính xưởng hiện đang ngoại tuyến. Lệnh in sẽ lưu trong hàng đợi và tự động in khi PC xưởng kết nối lại.
+        </div>
+      ` : '';
+
       const printBtnHtml = IS_CLOUD_BUILD
-        ? `<button onclick="triggerRemotePrint(${orderId}, null)" class="py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 transition text-slate-950 font-bold rounded-xl text-xs shadow-lg shadow-amber-950/50 flex items-center justify-center space-x-1" title="Gửi lệnh in tem nhiệt tới máy xưởng"><span>🖨️ In Từ Xa (Cloud)</span></button>`
-        : `<button onclick="printOrderLabel(${orderId}, this)" class="py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 transition text-slate-950 font-bold rounded-xl text-xs shadow-lg shadow-amber-950/50 flex items-center justify-center space-x-1"><span>🖨️ In Tem</span></button>`;
+        ? `<button onclick="triggerRemotePrint(${orderId}, null, this)" class="py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 transition text-slate-950 font-bold rounded-xl text-xs shadow-lg shadow-amber-950/50 flex items-center justify-center space-x-1"><span>🖨️ In tem</span></button>`
+        : `<button onclick="printOrderLabel(${orderId}, this)" class="py-2.5 bg-amber-500 hover:bg-amber-400 active:scale-95 transition text-slate-950 font-bold rounded-xl text-xs shadow-lg shadow-amber-950/50 flex items-center justify-center space-x-1"><span>🖨️ In tem</span></button>`;
 
       body.innerHTML = `
         <div class="flex flex-col items-center space-y-3">
+          ${offlineWarning}
           <div class="w-full flex justify-center bg-slate-950/60 rounded-xl p-2 border border-slate-800">
-            <img src="/api/orders/${orderId}/label?token=${encodeURIComponent(authToken)}" alt="Tem đơn hàng" class="rounded-lg border border-slate-700 max-w-full shadow-lg" onerror="this.parentElement.innerHTML='<div class=\'text-xs text-rose-400 py-6\'>Không thể tạo hình ảnh tem giao hàng.</div>'">
+            <img src="/api/orders/${orderId}/label?token=${encodeURIComponent(authToken)}" alt="Tem đơn hàng" class="w-full h-auto max-h-[55vh] object-contain rounded-lg border border-slate-700 max-w-full shadow-lg" onerror="handleLabelImageError(this, null)">
           </div>
           <div class="text-[11px] text-slate-400 text-center flex items-center justify-center space-x-1">
-            <span>🏷️ Tem nhiệt 75x100mm</span>
+            <span>🏷️ Tem nhiệt bưu kiện</span>
             <span class="text-sky-400 font-medium">(Tự động đánh dấu ĐÃ GIAO)</span>
           </div>
           <div class="w-full grid grid-cols-2 gap-2 pt-1">
@@ -1078,7 +1631,8 @@ ${b.hasPaymentQr ? `              <button onclick="showBillQr(${billId})" class=
               o.isDelivered = true;
               o.deliveredAt = data.deliveredAt;
               o.deliveredBy = data.deliveredBy;
-              renderOrders();
+              if (typeof filterOrders === 'function') filterOrders();
+              else renderOrders(cachedOrders);
             }
           }
           closePreviewModal();
@@ -1105,7 +1659,8 @@ ${b.hasPaymentQr ? `              <button onclick="showBillQr(${billId})" class=
       }
 
       try {
-        const res = await fetch('/api/bills/' + billId + '/print', {
+        const printUrl = '/api/bills/' + billId + '/print' + (orderId ? '?orderId=' + encodeURIComponent(orderId) : '');
+        const res = await fetch(printUrl, {
           method: 'POST',
           headers: { 'Authorization': 'Bearer ' + authToken }
         });
@@ -1115,13 +1670,18 @@ ${b.hasPaymentQr ? `              <button onclick="showBillQr(${billId})" class=
           if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
           showToast(data.message || 'Đã in tem hóa đơn thành công!', true);
 
-          if (orderId) {
-            const o = cachedOrders.find(x => x.id === orderId);
-            if (o) {
-              o.isDelivered = true;
-              renderOrders();
-            }
-          } else {
+          if (data.isDelivered) {
+            const billIdNum = Number(billId);
+            cachedOrders.forEach(o => {
+              if ((orderId && o.id === orderId) || (o.customerBillId && o.customerBillId === billIdNum)) {
+                o.isDelivered = true;
+                o.deliveredAt = data.deliveredAt;
+                o.deliveredBy = data.deliveredBy;
+              }
+            });
+            if (typeof filterOrders === 'function') filterOrders();
+            else renderOrders(cachedOrders);
+          } else if (!orderId) {
             loadOrders();
           }
           closePreviewModal();

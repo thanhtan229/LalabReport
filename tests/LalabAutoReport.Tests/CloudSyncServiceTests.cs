@@ -64,6 +64,7 @@ public partial class CloudSyncServiceTests : IDisposable
 
     private class TestHttpMessageHandler : HttpMessageHandler
     {
+        public Action<HttpRequestMessage>? OnSend { get; set; }
         public HttpRequestMessage? CapturedRequest { get; private set; }
         public string? CapturedBody { get; private set; }
         public HttpResponseMessage ResponseToReturn { get; set; } = new(HttpStatusCode.OK)
@@ -73,6 +74,7 @@ public partial class CloudSyncServiceTests : IDisposable
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            OnSend?.Invoke(request);
             if (!request.RequestUri!.AbsolutePath.EndsWith("/pull")) CapturedRequest = request;
             if (request.Content != null)
             {
@@ -383,7 +385,7 @@ public partial class CloudSyncServiceTests : IDisposable
             PrintedOrders.Add(order.Id);
             return Task.CompletedTask;
         }
-        public Task PrintTestSampleLabelAsync(string? printerName = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task PrintTestSampleLabelAsync(string? printerName = null, string? labelSizeOverride = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     [Fact]
@@ -447,4 +449,285 @@ public partial class CloudSyncServiceTests : IDisposable
         Assert.NotNull(order);
         Assert.True(order!.IsDelivered);
     }
+
+    [Fact]
+    public async Task ProcessPendingPrintCommandsAsync_ExecutesBillPrintAndMarksIncludedOrdersDelivered()
+    {
+        var settings = await _settingsRepo.GetSettingsAsync();
+        settings.EnableCloudSync = true;
+        settings.CloudSyncApiUrl = "https://lalab.tinix.io.vn";
+        settings.CloudSyncSecret = "test-secret";
+        settings.AutoMarkDeliveredOnPrint = true;
+        await _settingsRepo.SaveSettingsAsync(settings);
+
+        long includedOrderId;
+        long excludedOrderId;
+        long billId;
+        using (var conn = _connectionFactory.CreateConnection())
+        {
+            includedOrderId = await conn.ExecuteScalarAsync<long>(@"
+                INSERT INTO orders (order_code, work_date, original_folder_name, relative_path, status, is_delivered, created_at, updated_at)
+                VALUES ('DH-PRINT-BILL-01', '2026-10-02', 'Khach Bill 1', '2026-10-02/Khach Bill 1', 'Ready', 0, datetime('now'), datetime('now'));
+                SELECT last_insert_rowid();
+            ");
+
+            excludedOrderId = await conn.ExecuteScalarAsync<long>(@"
+                INSERT INTO orders (order_code, work_date, original_folder_name, relative_path, status, is_delivered, created_at, updated_at)
+                VALUES ('DH-PRINT-BILL-02', '2026-10-02', 'Khach Bill 2', '2026-10-02/Khach Bill 2', 'Ready', 0, datetime('now'), datetime('now'));
+                SELECT last_insert_rowid();
+            ");
+
+            billId = await conn.ExecuteScalarAsync<long>(@"
+                INSERT INTO customer_bills (bill_number, bill_type, customer_name_snapshot, period_start, period_end, status, product_subtotal, adjustments_total, grand_total, is_paid, created_at, updated_at)
+                VALUES ('BILL-20261002-0099', 'Customer', 'Khach Bill Test', '2026-10-02', '2026-10-02', 'Draft', 100000, 0, 100000, 0, datetime('now'), datetime('now'));
+                SELECT last_insert_rowid();
+            ");
+
+            await conn.ExecuteAsync(@"
+                INSERT INTO customer_bill_orders (bill_id, order_id, order_name_snapshot, order_date_snapshot, original_folder_name_snapshot, subtotal, is_included)
+                VALUES (@BillId, @OrderId, 'DH 1', '2026-10-02', 'Khach Bill 1', 50000, 1);
+            ", new { BillId = billId, OrderId = includedOrderId });
+
+            await conn.ExecuteAsync(@"
+                INSERT INTO customer_bill_orders (bill_id, order_id, order_name_snapshot, order_date_snapshot, original_folder_name_snapshot, subtotal, is_included)
+                VALUES (@BillId, @OrderId, 'DH 2', '2026-10-02', 'Khach Bill 2', 50000, 0);
+            ", new { BillId = billId, OrderId = excludedOrderId });
+        }
+
+        await new SqliteCloudSyncStateRepository(_connectionFactory).BindStreamAsync("print-stream", settings.CloudSyncApiUrl);
+
+        string pendingCmdsJson = $@"{{
+            ""commands"": [
+                {{
+                    ""id"": 99,
+                    ""orderId"": 0,
+                    ""billId"": {billId},
+                    ""commandType"": ""print_bill_label"",
+                    ""requestedBy"": ""Admin""
+                }}
+            ]
+        }}";
+
+        var handler = new TestHttpMessageHandler
+        {
+            ResponseToReturn = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(pendingCmdsJson)
+            }
+        };
+        var httpClient = new HttpClient(handler);
+        var exporter = new TestShippingLabelExporter();
+
+        var service = new CloudSyncService(
+            _settingsRepo,
+            _orderRepo,
+            _customerBillRepo,
+            _reportService,
+            httpClient,
+            null,
+            exporter, enablePeriodicSync: false);
+
+        int processed = await service.ProcessPendingPrintCommandsAsync();
+        Assert.Equal(1, processed);
+        Assert.Contains(billId, exporter.PrintedBills);
+
+        // Verify included order delivery marked, excluded order untouched
+        var incOrder = await _orderRepo.GetOrderByIdAsync(includedOrderId);
+        Assert.NotNull(incOrder);
+        Assert.True(incOrder!.IsDelivered);
+
+        var excOrder = await _orderRepo.GetOrderByIdAsync(excludedOrderId);
+        Assert.NotNull(excOrder);
+        Assert.False(excOrder!.IsDelivered);
+    }
+
+    [Fact]
+    public async Task ProcessPendingGalleryJobsAsync_ClaimsAndProcessesManifestJob_Successfully()
+    {
+        var settings = await _settingsRepo.GetSettingsAsync();
+        settings.EnableCloudSync = true;
+        settings.CloudSyncApiUrl = "https://example.com/api";
+        settings.CloudSyncSecret = "test-secret";
+        await _settingsRepo.SaveSettingsAsync(settings);
+
+        long orderId = 101;
+        var mockGallery = new MockOrderGalleryService();
+        mockGallery.ManifestToReturn = new OrderGalleryManifest
+        {
+            OrderId = orderId,
+            ManifestVersion = "v1_test",
+            TotalImageCount = 1,
+            Groups = new List<OrderGalleryGroup>()
+        };
+
+        string jobsJson = $@"{{
+            ""jobs"": [
+                {{
+                    ""id"": ""job-101-manifest"",
+                    ""orderId"": {orderId},
+                    ""manifestVersion"": """",
+                    ""status"": ""PENDING""
+                }}
+            ]
+        }}";
+
+        var handler = new TestHttpMessageHandler
+        {
+            ResponseToReturn = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(jobsJson)
+            }
+        };
+        var httpClient = new HttpClient(handler);
+
+        var service = new CloudSyncService(
+            _settingsRepo,
+            _orderRepo,
+            _customerBillRepo,
+            _reportService,
+            httpClient,
+            enablePeriodicSync: false,
+            orderGalleryService: mockGallery);
+
+        int processed = await service.ProcessPendingGalleryJobsAsync();
+        Assert.Equal(1, processed);
+        Assert.True(mockGallery.GetOrderManifestCalled);
+    }
+
+    private class MockOrderGalleryService : IOrderGalleryService
+    {
+        public bool GetOrderManifestCalled { get; set; }
+        public OrderGalleryManifest? ManifestToReturn { get; set; }
+
+        public Task<OrderGalleryManifest> GetOrderManifestAsync(long orderId, CancellationToken cancellationToken = default)
+        {
+            GetOrderManifestCalled = true;
+            return Task.FromResult(ManifestToReturn ?? new OrderGalleryManifest { OrderId = orderId });
+        }
+
+        public Task<OrderGalleryPage> GetOrderGalleryPageAsync(long orderId, string manifestVersion, int offset, int limit, CancellationToken cancellationToken = default)
+            => Task.FromResult(new OrderGalleryPage());
+
+        public string? ThumbnailPathToReturn { get; set; }
+
+        public Task<ThumbnailResult> GetGalleryThumbnailAsync(long orderId, string manifestVersion, string fileId, CancellationToken cancellationToken = default)
+        {
+            if (ThumbnailPathToReturn != null)
+                return Task.FromResult(ThumbnailResult.SuccessResult(ThumbnailPathToReturn));
+            return Task.FromResult(ThumbnailResult.NotFound());
+        }
+
+        public Task TouchViewedBatchAsync(long orderId, string manifestVersion, IEnumerable<string> fileIds, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task ProcessPendingGalleryJobsAsync_WhenJobManifestVersionDiffersFromLocal_PushesUpdatedManifestBeforeReady()
+    {
+        var settings = await _settingsRepo.GetSettingsAsync();
+        settings.EnableCloudSync = true;
+        settings.CloudSyncApiUrl = "https://app.tinix.io.vn";
+        settings.CloudSyncSecret = "test-secret";
+        await _settingsRepo.SaveSettingsAsync(settings);
+
+        long orderId = 202;
+        string tempThumbFile = Path.Combine(_tempRoot, "test_thumb.jpg");
+        await File.WriteAllBytesAsync(tempThumbFile, new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x01 });
+
+        var mockGallery = new MockOrderGalleryService
+        {
+            ManifestToReturn = new OrderGalleryManifest
+            {
+                OrderId = orderId,
+                ManifestVersion = "v2_new_manifest",
+                TotalImageCount = 1,
+                Groups = new List<OrderGalleryGroup>
+                {
+                    new()
+                    {
+                        Items = new List<OrderGalleryItem>
+                        {
+                            new()
+                            {
+                                FileId = "file_999",
+                                Version = "v2_item_ver"
+                            }
+                        }
+                    }
+                }
+            },
+            ThumbnailPathToReturn = tempThumbFile
+        };
+
+        string jobsJson = $@"{{
+            ""jobs"": [
+                {{
+                    ""id"": ""job-batch-202"",
+                    ""orderId"": {orderId},
+                    ""manifestVersion"": ""v1_old_manifest"",
+                    ""status"": ""PENDING"",
+                    ""fileIds"": [""file_999""]
+                }}
+            ]
+        }}";
+
+        var recordedRequests = new List<(HttpMethod Method, string Path)>();
+        var handler = new TestHttpMessageHandler
+        {
+            OnSend = req => recordedRequests.Add((req.Method, req.RequestUri!.AbsolutePath)),
+            ResponseToReturn = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(jobsJson)
+            }
+        };
+        var httpClient = new HttpClient(handler);
+
+        var service = new CloudSyncService(
+            _settingsRepo,
+            _orderRepo,
+            _customerBillRepo,
+            _reportService,
+            httpClient,
+            enablePeriodicSync: false,
+            orderGalleryService: mockGallery);
+
+        int processed = await service.ProcessPendingGalleryJobsAsync();
+        Assert.Equal(1, processed);
+
+        var manifestPostIdx = recordedRequests.FindIndex(r => r.Method == HttpMethod.Post && r.Path.EndsWith("/api/sync/gallery/manifests"));
+        var readyPostIdx = recordedRequests.FindIndex(r => r.Method == HttpMethod.Post && r.Path.EndsWith("/api/sync/gallery/jobs/job-batch-202/status"));
+
+        Assert.True(manifestPostIdx >= 0, "Updated manifest was not pushed to /api/sync/gallery/manifests");
+        Assert.True(readyPostIdx >= 0, "Job status READY was not reported");
+        Assert.True(manifestPostIdx < readyPostIdx, $"Updated manifest POST (index {manifestPostIdx}) must happen before READY status POST (index {readyPostIdx})");
+    }
+
+    [Fact]
+    public void MapBillToCloudDto_IncludesPhoneShippingAddressAndNote()
+    {
+        var bill = new CustomerBill
+        {
+            Id = 42,
+            BillNumber = "BILL-42",
+            CustomerNameSnapshot = "Khách Hàng Test",
+            PhoneSnapshot = "0987654321",
+            ShippingAddressSnapshot = "Số 10 Tràng Tiền, Hoàn Kiếm, Hà Nội",
+            Note = "Giao buổi sáng",
+            PeriodEnd = "2026-10-25",
+            GrandTotal = 250000,
+            ProductSubtotal = 250000,
+            AdjustmentsTotal = 0,
+            IsPaid = true
+        };
+
+        var mapper = typeof(CloudSyncService).GetMethod("MapBillToCloudDto", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        var dtoObj = mapper.Invoke(null, new object[] { bill });
+        using var jsonDoc = JsonDocument.Parse(JsonSerializer.Serialize(dtoObj));
+        var root = jsonDoc.RootElement;
+
+        Assert.Equal("0987654321", root.GetProperty("phoneSnapshot").GetString());
+        Assert.Equal("Số 10 Tràng Tiền, Hoàn Kiếm, Hà Nội", root.GetProperty("shippingAddressSnapshot").GetString());
+        Assert.Equal("Giao buổi sáng", root.GetProperty("note").GetString());
+    }
+
 }

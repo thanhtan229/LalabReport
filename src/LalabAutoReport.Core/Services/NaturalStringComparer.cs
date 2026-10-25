@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace LalabAutoReport.Core.Services;
 
-public class NaturalStringComparer : IComparer<string>
+public class NaturalStringComparer : IComparer<string?>
 {
     public static readonly NaturalStringComparer Instance = new();
 

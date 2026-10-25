@@ -370,5 +370,62 @@ describe('Worker Auth and API', () => {
     });
     const updateCmdRes = await worker.fetch(updateCmdReq, env, ctx);
     expect(updateCmdRes.status).toBe(200);
+
+    // 12. Test Label SVG Endpoints
+    // Staff accessing order label -> gets SVG package slip (no financial info)
+    const staffOrderLabelReq = new Request('http://localhost:8787/api/orders/101/label', {
+      headers: { Authorization: `Bearer ${staffToken}` }
+    });
+    const staffOrderLabelRes = await worker.fetch(staffOrderLabelReq, env, ctx);
+    expect(staffOrderLabelRes.status).toBe(200);
+    expect(staffOrderLabelRes.headers.get('Content-Type')).toContain('image/svg+xml');
+    const staffSvg = await staffOrderLabelRes.text();
+    expect(staffSvg).toContain('TEM ĐÓNG GÓI');
+    expect(staffSvg).not.toContain('TIỀN THU HỘ (COD)');
+
+    // Admin accessing order label with linked bill -> gets SVG delivery label with bill details
+    const adminOrderLabelReq = new Request('http://localhost:8787/api/orders/101/label', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const adminOrderLabelRes = await worker.fetch(adminOrderLabelReq, env, ctx);
+    expect(adminOrderLabelRes.status).toBe(200);
+    expect(adminOrderLabelRes.headers.get('Content-Type')).toContain('image/svg+xml');
+    const adminSvg = await adminOrderLabelRes.text();
+    expect(adminSvg).toContain('TEM GIAO HÀNG');
+
+    // Admin accessing bill label -> gets SVG delivery label
+    const adminBillLabelReq = new Request('http://localhost:8787/api/bills/201/label', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const adminBillLabelRes = await worker.fetch(adminBillLabelReq, env, ctx);
+    expect(adminBillLabelRes.status).toBe(200);
+    expect(adminBillLabelRes.headers.get('Content-Type')).toContain('image/svg+xml');
+
+    // Staff accessing bill label directly -> 403 Forbidden
+    const staffBillLabelReq = new Request('http://localhost:8787/api/bills/201/label', {
+      headers: { Authorization: `Bearer ${staffToken}` }
+    });
+    const staffBillLabelRes = await worker.fetch(staffBillLabelReq, env, ctx);
+    expect(staffBillLabelRes.status).toBe(403);
+
+    // 13. Test Bill Remote Print
+    // Staff attempting bill remote print -> 403 Forbidden
+    const staffBillPrintReq = new Request('http://localhost:8787/api/bills/201/remote-print', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${staffToken}` }
+    });
+    const staffBillPrintRes = await worker.fetch(staffBillPrintReq, env, ctx);
+    expect(staffBillPrintRes.status).toBe(403);
+
+    // Admin remote printing bill -> 200 OK, queues print_bill_label
+    const adminBillPrintReq = new Request('http://localhost:8787/api/bills/201/remote-print', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const adminBillPrintRes = await worker.fetch(adminBillPrintReq, env, ctx);
+    expect(adminBillPrintRes.status).toBe(200);
+    const billPrintData = await adminBillPrintRes.json() as any;
+    expect(billPrintData.success).toBe(true);
+    expect(billPrintData.commandId).toBeDefined();
   });
 });

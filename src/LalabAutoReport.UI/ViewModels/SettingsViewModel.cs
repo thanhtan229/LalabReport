@@ -61,6 +61,21 @@ public partial class SettingsViewModel : ObservableObject
     private bool _showOrderThumbnails = true;
 
     [ObservableProperty]
+    private bool _enableThumbnailAutoCleanup = true;
+
+    public record RetentionOption(int Days, string DisplayName);
+
+    public IReadOnlyList<RetentionOption> RetentionOptions { get; } = new List<RetentionOption>
+    {
+        new(30, "30 ngày không sử dụng"),
+        new(60, "60 ngày không sử dụng (Mặc định)"),
+        new(90, "90 ngày không sử dụng")
+    };
+
+    [ObservableProperty]
+    private int _thumbnailRetentionDays = 60;
+
+    [ObservableProperty]
     private string _thumbnailCacheSizeText = "0 MB";
 
     [ObservableProperty]
@@ -93,7 +108,15 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private System.Windows.Media.ImageSource? _staffQrCodeImage;
 
-    // Thermal Label Printer Settings (75x100mm)
+    // Thermal Label Printer Settings (40x100mm default, 75x100mm optional)
+    public ObservableCollection<string> AvailableThermalLabelSizes { get; } = new()
+    {
+        "40x100mm (Khổ ngang 100x40mm - Mặc định)",
+        "75x100mm (Khổ dọc tiêu chuẩn 75x100mm)"
+    };
+
+    [ObservableProperty]
+    private string _selectedThermalLabelSize = "40x100mm (Khổ ngang 100x40mm - Mặc định)";
     [ObservableProperty]
     private ObservableCollection<string> _availablePrinters = new();
 
@@ -400,8 +423,18 @@ public partial class SettingsViewModel : ObservableObject
             AdminPin = settings.AdminPin ?? string.Empty;
             StaffPin = settings.StaffPin ?? string.Empty;
             ShowOrderThumbnails = settings.ShowOrderThumbnails;
+            EnableThumbnailAutoCleanup = settings.EnableThumbnailAutoCleanup;
+            ThumbnailRetentionDays = (settings.ThumbnailRetentionDays == 30 || settings.ThumbnailRetentionDays == 90) ? settings.ThumbnailRetentionDays : 60;
 
             // Thermal Printer Settings
+            if (string.Equals(settings.ThermalLabelSize, ThermalLabelSizes.Size75x100, StringComparison.OrdinalIgnoreCase))
+            {
+                SelectedThermalLabelSize = "75x100mm (Khổ dọc tiêu chuẩn 75x100mm)";
+            }
+            else
+            {
+                SelectedThermalLabelSize = "40x100mm (Khổ ngang 100x40mm - Mặc định)";
+            }
             RefreshPrinters();
             if (!string.IsNullOrWhiteSpace(settings.ThermalPrinterName))
             {
@@ -837,6 +870,8 @@ public partial class SettingsViewModel : ObservableObject
             .Select(e => e.StartsWith('.') ? e : "." + e)
             .ToList();
 
+        var existingSettings = await _settingsRepository.GetSettingsAsync();
+
         var settings = new AppSettings
         {
             RootFolder = RootFolder.Trim(),
@@ -866,7 +901,12 @@ public partial class SettingsViewModel : ObservableObject
             AdminPin = AdminPin?.Trim() ?? string.Empty,
             StaffPin = StaffPin?.Trim() ?? string.Empty,
             ShowOrderThumbnails = ShowOrderThumbnails,
+            EnableThumbnailAutoCleanup = EnableThumbnailAutoCleanup,
+            ThumbnailRetentionDays = (ThumbnailRetentionDays == 30 || ThumbnailRetentionDays == 90) ? ThumbnailRetentionDays : 60,
+
+            LastThumbnailCleanupAt = existingSettings.LastThumbnailCleanupAt,
             ThermalPrinterName = (SelectedThermalPrinter == "(Sử dụng máy in mặc định của Windows)" || string.IsNullOrWhiteSpace(SelectedThermalPrinter)) ? null : SelectedThermalPrinter.Trim(),
+            ThermalLabelSize = SelectedThermalLabelSize.StartsWith("75x100", StringComparison.OrdinalIgnoreCase) ? ThermalLabelSizes.Size75x100 : ThermalLabelSizes.Size40x100,
             AutoMarkDeliveredOnPrint = AutoMarkDeliveredOnPrint,
             MinimizeToTrayOnClose = MinimizeToTrayOnClose,
             AutoStartWithWindows = AutoStartWithWindows,
@@ -1115,7 +1155,10 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         IsTestPrinting = true;
-        TestPrintStatusMessage = "Đang gửi lệnh in tem mẫu (75x100mm)...";
+        string labelSizeToTest = SelectedThermalLabelSize.StartsWith("75x100", StringComparison.OrdinalIgnoreCase)
+            ? ThermalLabelSizes.Size75x100
+            : ThermalLabelSizes.Size40x100;
+        TestPrintStatusMessage = $"Đang gửi lệnh in tem mẫu ({labelSizeToTest})...";
 
         try
         {
@@ -1123,10 +1166,10 @@ public partial class SettingsViewModel : ObservableObject
                 ? null
                 : SelectedThermalPrinter;
 
-            await exporter.PrintTestSampleLabelAsync(targetPrinter);
-            TestPrintStatusMessage = "✅ Đã gửi lệnh in tem mẫu 75x100mm tới máy in!";
+            await exporter.PrintTestSampleLabelAsync(targetPrinter, labelSizeToTest);
+            TestPrintStatusMessage = $"✅ Đã gửi lệnh in tem mẫu {labelSizeToTest} tới máy in!";
             MessageBox.Show(
-                "Lệnh in tem kiểm tra (75x100mm) đã được gửi tới máy in thành công!\n\nVui lòng kiểm tra tem in ra từ máy in nhiệt của bạn.",
+                $"Lệnh in tem kiểm tra ({labelSizeToTest}) đã được gửi tới máy in thành công!\n\nVui lòng kiểm tra tem in ra từ máy in nhiệt của bạn.",
                 "In Tem Mẫu Thành Công",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -1568,19 +1611,97 @@ public partial class SettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task ClearThumbnailCacheAsync()
+    private async Task CleanupExpiredThumbnailsNowAsync()
     {
         if (_thumbnailService == null) return;
         try
         {
-            await Task.Run(() => _thumbnailService.ClearDiskCache());
-            _thumbnailService.ClearMemoryCache();
+            int days = (ThumbnailRetentionDays == 30 || ThumbnailRetentionDays == 90) ? ThumbnailRetentionDays : 60;
+            var summary = await _thumbnailService.CleanupExpiredDiskCacheAsync(TimeSpan.FromDays(days));
             RefreshThumbnailCacheSize();
-            ThumbnailCacheStatusMessage = "Đã dọn sạch toàn bộ bộ nhớ đệm ảnh thumbnail!";
+            string msg = $"Đã dọn dẹp xong: Đã xóa {summary.FilesDeleted} ảnh thumbnail quá hạn ({summary.BytesFreed / (1024.0 * 1024.0):F2} MB)!";
+
+            var settings = await _settingsRepository.GetSettingsAsync();
+            if (settings.EnableCloudSync && _cloudSyncService != null)
+            {
+                try
+                {
+                    bool cloudCleaned = await _cloudSyncService.CleanupCloudGalleryCacheAsync(days, clearAll: false);
+                    if (cloudCleaned)
+                    {
+                        msg += " (Đồng thời đã dọn ảnh quá hạn trên Cloud)";
+                    }
+                }
+                catch (Exception cloudEx)
+                {
+                    msg += $" (Dọn Cloud chưa hoàn tất: {cloudEx.Message})";
+                }
+            }
+
+            settings.LastThumbnailCleanupAt = DateTimeOffset.UtcNow.ToString("o");
+            await _settingsRepository.SaveSettingsAsync(settings);
+
+            ThumbnailCacheStatusMessage = msg;
         }
         catch (Exception ex)
         {
-            ThumbnailCacheStatusMessage = $"Lỗi dọn cache: {ex.Message}";
+            ThumbnailCacheStatusMessage = $"Lỗi dọn thumbnail quá hạn: {ex.Message}";
+        }
+    }
+
+    public Func<string, string, MessageBoxButton, MessageBoxImage, MessageBoxResult> ClearCacheConfirmFunc { get; set; } = MessageBox.Show;
+
+    [RelayCommand]
+    private async Task ClearThumbnailCacheAsync()
+    {
+        var result = ClearCacheConfirmFunc(
+            "Bạn có chắc chắn muốn xóa toàn bộ bộ nhớ đệm hình thu nhỏ không?\n\n" +
+            "• Bấm 'Yes' để xóa cả bộ nhớ đệm trên máy tính này và dọn dẹp ảnh trên Cloud.\n" +
+            "• Bấm 'No' để chỉ xóa bộ nhớ đệm trên máy tính này.\n" +
+            "• Bấm 'Cancel' để hủy thao tác.",
+            "Xác nhận xóa bộ nhớ đệm hình thu nhỏ",
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Question);
+
+        if (result == MessageBoxResult.Cancel) return;
+
+        bool clearCloud = (result == MessageBoxResult.Yes);
+
+        if (_thumbnailService != null)
+        {
+            try
+            {
+                var summary = await _thumbnailService.ClearAllDiskCacheAsync();
+                RefreshThumbnailCacheSize();
+                string msg = $"Đã xóa sạch bộ nhớ đệm máy tính: {summary.FilesDeleted} file ({summary.BytesFreed / (1024.0 * 1024.0):F2} MB)!";
+
+                if (clearCloud)
+                {
+                    try
+                    {
+                        var settings = await _settingsRepository.GetSettingsAsync();
+                        if (settings.EnableCloudSync && _cloudSyncService != null)
+                        {
+                            int retentionDays = (ThumbnailRetentionDays == 30 || ThumbnailRetentionDays == 90) ? ThumbnailRetentionDays : 60;
+                            bool cloudCleaned = await _cloudSyncService.CleanupCloudGalleryCacheAsync(retentionDays, clearAll: true);
+                            if (cloudCleaned)
+                            {
+                                msg += " (Đồng thời đã dọn sạch ảnh trên Cloud)";
+                            }
+                        }
+                    }
+                    catch (Exception cloudEx)
+                    {
+                        msg += $" (Dọn Cloud chưa hoàn tất: {cloudEx.Message})";
+                    }
+                }
+
+                ThumbnailCacheStatusMessage = msg;
+            }
+            catch (Exception ex)
+            {
+                ThumbnailCacheStatusMessage = $"Lỗi xóa bộ nhớ đệm: {ex.Message}";
+            }
         }
     }
 

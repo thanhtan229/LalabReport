@@ -208,6 +208,15 @@ public class SqliteSettingsRepository : ISettingsRepository
             settings.ThermalPrinterName = string.IsNullOrWhiteSpace(thermalPrinter) ? null : thermalPrinter;
         }
 
+        if (dict.TryGetValue("ThermalLabelSize", out var thermalSize) && !string.IsNullOrWhiteSpace(thermalSize))
+        {
+            settings.ThermalLabelSize = thermalSize;
+        }
+        else
+        {
+            settings.ThermalLabelSize = ThermalLabelSizes.Size40x100;
+        }
+
         if (dict.TryGetValue("AutoMarkDeliveredOnPrint", out var autoDelivered) && bool.TryParse(autoDelivered, out var parsedAutoDelivered))
         {
             settings.AutoMarkDeliveredOnPrint = parsedAutoDelivered;
@@ -246,6 +255,21 @@ public class SqliteSettingsRepository : ISettingsRepository
         if (dict.TryGetValue("LastCloudPullAt", out var lastPull))
         {
             settings.LastCloudPullAt = string.IsNullOrWhiteSpace(lastPull) ? null : lastPull;
+        }
+
+        if (dict.TryGetValue("EnableThumbnailAutoCleanup", out var autoCleanup) && bool.TryParse(autoCleanup, out var parsedCleanup))
+        {
+            settings.EnableThumbnailAutoCleanup = parsedCleanup;
+        }
+
+        if (dict.TryGetValue("ThumbnailRetentionDays", out var retDays) && int.TryParse(retDays, out var parsedRetDays) && (parsedRetDays == 30 || parsedRetDays == 60 || parsedRetDays == 90))
+        {
+            settings.ThumbnailRetentionDays = parsedRetDays;
+        }
+
+        if (dict.TryGetValue("LastThumbnailCleanupAt", out var lastCleanup))
+        {
+            settings.LastThumbnailCleanupAt = string.IsNullOrWhiteSpace(lastCleanup) ? null : lastCleanup;
         }
 
         return settings;
@@ -350,6 +374,9 @@ public class SqliteSettingsRepository : ISettingsRepository
             INSERT INTO app_settings (key, value) VALUES ('ThermalPrinterName', @ThermalPrinterName)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value;
 
+            INSERT INTO app_settings (key, value) VALUES ('ThermalLabelSize', @ThermalLabelSize)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+
             INSERT INTO app_settings (key, value) VALUES ('AutoMarkDeliveredOnPrint', @AutoMarkDeliveredOnPrint)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value;
 
@@ -366,6 +393,15 @@ public class SqliteSettingsRepository : ISettingsRepository
             ON CONFLICT(key) DO UPDATE SET value = excluded.value;
 
             INSERT INTO app_settings (key, value) VALUES ('CloudSyncSecret', @CloudSyncSecret)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+
+            INSERT INTO app_settings (key, value) VALUES ('EnableThumbnailAutoCleanup', @EnableThumbnailAutoCleanup)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+
+            INSERT INTO app_settings (key, value) VALUES ('ThumbnailRetentionDays', @ThumbnailRetentionDays)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+
+            INSERT INTO app_settings (key, value) VALUES ('LastThumbnailCleanupAt', @LastThumbnailCleanupAt)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value;
 
             INSERT INTO app_settings (key, value) VALUES ('LastCloudSyncAt', @LastCloudSyncAt)
@@ -405,12 +441,16 @@ public class SqliteSettingsRepository : ISettingsRepository
             MobileAuthSecret = settings.MobileAuthSecret ?? string.Empty,
             ShowOrderThumbnails = settings.ShowOrderThumbnails.ToString(),
             ThermalPrinterName = settings.ThermalPrinterName ?? string.Empty,
+            ThermalLabelSize = string.IsNullOrWhiteSpace(settings.ThermalLabelSize) ? ThermalLabelSizes.Size40x100 : settings.ThermalLabelSize,
             AutoMarkDeliveredOnPrint = settings.AutoMarkDeliveredOnPrint.ToString(),
             MinimizeToTrayOnClose = settings.MinimizeToTrayOnClose.ToString(),
             AutoStartWithWindows = settings.AutoStartWithWindows.ToString(),
             EnableCloudSync = settings.EnableCloudSync.ToString(),
             CloudSyncApiUrl = settings.CloudSyncApiUrl,
             CloudSyncSecret = settings.CloudSyncSecret,
+            EnableThumbnailAutoCleanup = settings.EnableThumbnailAutoCleanup.ToString(),
+            ThumbnailRetentionDays = settings.ThumbnailRetentionDays.ToString(),
+            LastThumbnailCleanupAt = settings.LastThumbnailCleanupAt ?? string.Empty,
             LastCloudSyncAt = settings.LastCloudSyncAt ?? string.Empty,
             LastCloudPullAt = settings.LastCloudPullAt ?? string.Empty
         }, transaction: transaction);

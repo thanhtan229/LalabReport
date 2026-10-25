@@ -1,7 +1,26 @@
 import { acceptOperation, getEventPage, getReconciliationSnapshot, OperationError, OperationalMutation } from './operations';
 import { toMobileBill } from './mobile-bill';
+import { renderOrderLabelSvg, renderBillLabelSvg } from './label-svg';
 import { Env, UserRole, SyncBatchPayload, HeartbeatPayload } from './types';
 import { createAuthToken, verifyAuthToken, extractAuthToken, validSecret } from './auth';
+import {
+  getPendingGalleryJobs,
+  claimGalleryJob,
+  updateGalleryJobStatus,
+  saveGalleryManifest,
+  getGalleryManifest,
+  recordGalleryMedia,
+  getGalleryMedia,
+  touchGalleryMedia,
+  getGalleryPage,
+  createOrGetGalleryRequestJob,
+  createOrGetGalleryBatchJob,
+  getGalleryJobById,
+  cleanupExpiredCloudGalleryMedia,
+  clearAllCloudGalleryMedia,
+  deleteGalleryMedia,
+  OrderGalleryManifest
+} from './gallery';
 import {
   getOrdersByDate,
   getOrderById,
@@ -278,6 +297,99 @@ export default {
       return jsonResponse({ success: acknowledged, commandId: cmdId }, acknowledged ? 200 : 409);
     }
 
+    // 5.5 Desktop Sync API: Gallery Sync Endpoints
+    if (url.pathname === '/api/sync/gallery/jobs' && request.method === 'GET') {
+      const syncSecret = request.headers.get('X-Sync-Secret') || extractAuthToken(request);
+      const configuredSecret = env.SYNC_SECRET;
+      if (!validSecret(configuredSecret)) return jsonResponse({ success: false, message: 'SYNC_SECRET is not configured.' }, 503);
+      if (!syncSecret || syncSecret !== configuredSecret) return jsonResponse({ success: false, message: 'Forbidden' }, 403);
+
+      const jobs = await getPendingGalleryJobs(env.DB);
+      return jsonResponse({ success: true, jobs });
+    }
+
+    const galleryClaimMatch = url.pathname.match(/^\/api\/sync\/gallery\/jobs\/([^/]+)\/claim$/);
+    if (galleryClaimMatch && request.method === 'POST') {
+      const syncSecret = request.headers.get('X-Sync-Secret') || extractAuthToken(request);
+      const configuredSecret = env.SYNC_SECRET;
+      if (!validSecret(configuredSecret)) return jsonResponse({ success: false, message: 'SYNC_SECRET is not configured.' }, 503);
+      if (!syncSecret || syncSecret !== configuredSecret) return jsonResponse({ success: false, message: 'Forbidden' }, 403);
+
+      const jobId = galleryClaimMatch[1];
+      const body = await request.json().catch(() => ({})) as { claimToken?: string };
+      if (!body.claimToken) return jsonResponse({ message: 'claimToken is required.' }, 400);
+
+      const claimed = await claimGalleryJob(env.DB, jobId, body.claimToken);
+      return jsonResponse({ success: claimed }, claimed ? 200 : 409);
+    }
+
+    const galleryStatusMatch = url.pathname.match(/^\/api\/sync\/gallery\/jobs\/([^/]+)\/status$/);
+    if (galleryStatusMatch && request.method === 'POST') {
+      const syncSecret = request.headers.get('X-Sync-Secret') || extractAuthToken(request);
+      const configuredSecret = env.SYNC_SECRET;
+      if (!validSecret(configuredSecret)) return jsonResponse({ success: false, message: 'SYNC_SECRET is not configured.' }, 503);
+      if (!syncSecret || syncSecret !== configuredSecret) return jsonResponse({ success: false, message: 'Forbidden' }, 403);
+
+      const jobId = galleryStatusMatch[1];
+      const body = await request.json().catch(() => ({})) as { claimToken?: string; status?: string; errorMessage?: string };
+      if (!body.claimToken || (body.status !== 'READY' && body.status !== 'FAILED')) {
+        return jsonResponse({ message: 'claimToken and valid status (READY|FAILED) are required.' }, 400);
+      }
+
+      const acknowledged = await updateGalleryJobStatus(env.DB, jobId, body.claimToken, body.status as any, body.errorMessage);
+      return jsonResponse({ success: acknowledged, jobId }, acknowledged ? 200 : 409);
+    }
+
+    if (url.pathname === '/api/sync/gallery/manifests' && request.method === 'POST') {
+      const syncSecret = request.headers.get('X-Sync-Secret') || extractAuthToken(request);
+      const configuredSecret = env.SYNC_SECRET;
+      if (!validSecret(configuredSecret)) return jsonResponse({ success: false, message: 'SYNC_SECRET is not configured.' }, 503);
+      if (!syncSecret || syncSecret !== configuredSecret) return jsonResponse({ success: false, message: 'Forbidden' }, 403);
+
+      const manifest = await request.json() as OrderGalleryManifest;
+      if (!manifest || !manifest.orderId) return jsonResponse({ message: 'Invalid manifest' }, 400);
+
+      await saveGalleryManifest(env.DB, manifest);
+      return jsonResponse({ success: true, orderId: manifest.orderId });
+    }
+
+    const galleryUploadMatch = url.pathname.match(/^\/api\/sync\/gallery\/images\/([^/]+)$/);
+    if (galleryUploadMatch && request.method === 'PUT') {
+      const syncSecret = request.headers.get('X-Sync-Secret') || extractAuthToken(request);
+      const configuredSecret = env.SYNC_SECRET;
+      if (!validSecret(configuredSecret)) return jsonResponse({ success: false, message: 'SYNC_SECRET is not configured.' }, 503);
+      if (!syncSecret || syncSecret !== configuredSecret) return jsonResponse({ success: false, message: 'Forbidden' }, 403);
+      if (!env.BUCKET) return jsonResponse({ success: false, message: 'R2 BUCKET is not configured.' }, 500);
+
+      const fileId = galleryUploadMatch[1];
+      const version = url.searchParams.get('v') || '1';
+      const r2Key = `gallery/${fileId}_${version}.jpg`;
+      const body = await request.arrayBuffer();
+
+      await env.BUCKET.put(r2Key, body, {
+        httpMetadata: { contentType: 'image/jpeg' }
+      });
+
+      await recordGalleryMedia(env.DB, fileId, version, r2Key, body.byteLength);
+      return jsonResponse({ success: true, fileId, version, r2Key });
+    }
+
+    if (url.pathname === '/api/sync/gallery/cleanup' && request.method === 'POST') {
+      const syncSecret = request.headers.get('X-Sync-Secret') || extractAuthToken(request);
+      const configuredSecret = env.SYNC_SECRET;
+      if (!validSecret(configuredSecret)) return jsonResponse({ success: false, message: 'SYNC_SECRET is not configured.' }, 503);
+      if (!syncSecret || syncSecret !== configuredSecret) return jsonResponse({ success: false, message: 'Forbidden' }, 403);
+
+      const body = await request.json().catch(() => ({})) as { retentionDays?: number; clearAll?: boolean };
+      if (body.clearAll) {
+        const res = await clearAllCloudGalleryMedia(env.DB, env.BUCKET);
+        return jsonResponse({ success: true, cleared: true, filesDeleted: res.deletedCount });
+      } else {
+        const res = await cleanupExpiredCloudGalleryMedia(env.DB, env.BUCKET, body.retentionDays);
+        return jsonResponse({ success: true, filesDeleted: res.deletedCount, bytesFreed: res.bytesFreed });
+      }
+    }
+
     // --- PROTECTED MOBILE ROUTES ---
     const token = extractAuthToken(request);
     let currentUser = token ? await verifyAuthToken(token, env.JWT_SECRET) : null;
@@ -384,6 +496,37 @@ export default {
       return new Response(object.body, { headers });
     }
 
+    // 7.3 Orders: Get Label SVG
+    const orderLabelMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/label$/);
+    if (orderLabelMatch && request.method === 'GET') {
+      const err = requireAuth();
+      if (err) return err;
+
+      const id = parseInt(orderLabelMatch[1], 10);
+      const order = await getOrderById(env.DB, id);
+      if (!order) return jsonResponse({ message: 'Không tìm thấy đơn hàng.' }, 404);
+
+      let svg: string;
+      if (order.customerBillId && currentUser?.role === 'Admin') {
+        const bill = await getBillById(env.DB, order.customerBillId);
+        if (bill) {
+          svg = renderBillLabelSvg(bill, env.WORKSHOP_NAME);
+        } else {
+          svg = renderOrderLabelSvg(order, env.WORKSHOP_NAME);
+        }
+      } else {
+        svg = renderOrderLabelSvg(order, env.WORKSHOP_NAME);
+      }
+
+      return new Response(svg, {
+        headers: {
+          'Content-Type': 'image/svg+xml; charset=utf-8',
+          'Cache-Control': 'no-cache',
+          ...CORS_HEADERS
+        }
+      });
+    }
+
     // 7.4 Orders: Send Remote Print Command
     const orderPrintMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/remote-print$/);
     if (orderPrintMatch && request.method === 'POST') {
@@ -405,6 +548,177 @@ export default {
         success: true,
         message: 'Đã gửi lệnh in tem tới hàng đợi máy in xưởng.',
         commandId: cmd.id
+      });
+    }
+
+    // 7.41 Orders Gallery: Request Gallery Manifest / Initial Batch
+    const orderGalleryRequestMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/gallery\/requests$/);
+    if (orderGalleryRequestMatch && request.method === 'POST') {
+      const err = requireAuth();
+      if (err) return err;
+
+      const id = parseInt(orderGalleryRequestMatch[1], 10);
+      const order = await getOrderById(env.DB, id);
+      if (!order) return jsonResponse({ message: 'Không tìm thấy đơn hàng.' }, 404);
+
+      const manifest = await getGalleryManifest(env.DB, id);
+      if (manifest) {
+        return jsonResponse({ ready: true, manifest });
+      }
+
+      const { job } = await createOrGetGalleryRequestJob(env.DB, id);
+      return jsonResponse({
+        ready: false,
+        pending: true,
+        requestId: job.id,
+        status: job.status,
+        message: 'Đang gửi yêu cầu lập danh sách ảnh tới máy tính xưởng...'
+      }, 202);
+    }
+
+    // 7.42 Orders Gallery: Get Page
+    const orderGalleryPageMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/gallery$/);
+    if (orderGalleryPageMatch && request.method === 'GET') {
+      const err = requireAuth();
+      if (err) return err;
+
+      const id = parseInt(orderGalleryPageMatch[1], 10);
+      const cursor = url.searchParams.get('cursor');
+      const rawLimit = parseInt(url.searchParams.get('limit') || '24', 10);
+      const limit = Number.isNaN(rawLimit) ? 24 : Math.max(1, Math.min(50, rawLimit));
+
+      const page = await getGalleryPage(env.DB, id, cursor, limit);
+      if (!page) {
+        return jsonResponse({ message: 'Chưa có danh sách ảnh cho đơn hàng này.' }, 404);
+      }
+
+      return jsonResponse(page);
+    }
+
+    // 7.43 Orders Gallery: Request Batch Images
+    const orderGalleryBatchMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/gallery\/batches$/);
+    if (orderGalleryBatchMatch && request.method === 'POST') {
+      const err = requireAuth();
+      if (err) return err;
+
+      const id = parseInt(orderGalleryBatchMatch[1], 10);
+      const body = await request.json().catch(() => ({})) as { manifestVersion?: string; fileIds?: string[] };
+      const fileIds = (body.fileIds || []).slice(0, 24);
+      const manifestVersion = body.manifestVersion || '';
+
+      const { job, allReady } = await createOrGetGalleryBatchJob(env.DB, id, manifestVersion, fileIds);
+      if (allReady) {
+        return jsonResponse({ ready: true, pendingCount: 0 });
+      }
+      if (!job) {
+        return jsonResponse({ message: 'Chưa có danh sách ảnh cho đơn hàng này hoặc phiên bản không hợp lệ.' }, 404);
+      }
+
+      return jsonResponse({
+        ready: false,
+        pending: true,
+        requestId: job.id,
+        pendingCount: job.fileIds.length
+      }, 202);
+    }
+
+    // 7.44 Orders Gallery: Get Request / Job Status
+    const galleryJobStatusMatch = url.pathname.match(/^\/api\/gallery\/requests\/([^/]+)$/);
+    if (galleryJobStatusMatch && request.method === 'GET') {
+      const err = requireAuth();
+      if (err) return err;
+
+      const reqId = galleryJobStatusMatch[1];
+      const job = await getGalleryJobById(env.DB, reqId);
+      if (!job) return jsonResponse({ message: 'Không tìm thấy yêu cầu tải ảnh.' }, 404);
+
+      // Strip internal claimToken before returning to mobile client
+      const { claimToken, ...safeJob } = job;
+      return jsonResponse(safeJob);
+    }
+
+    // 7.45 Orders Gallery: Serve Thumbnail Image from R2
+    const orderGalleryImageMatch = url.pathname.match(/^\/api\/orders\/(\d+)\/gallery\/images\/([^/]+)$/);
+    if (orderGalleryImageMatch && request.method === 'GET') {
+      const err = requireAuth();
+      if (err) return err;
+
+      const orderId = parseInt(orderGalleryImageMatch[1], 10);
+      const fileId = orderGalleryImageMatch[2];
+      const version = url.searchParams.get('v') || undefined;
+
+      // Validate scope against order manifest
+      const manifest = await getGalleryManifest(env.DB, orderId);
+      if (!manifest) return jsonResponse({ message: 'Không tìm thấy thư viện cho đơn hàng này.' }, 404);
+
+      let found = false;
+      for (const g of manifest.groups) {
+        if (g.items.some(i => i.fileId === fileId)) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) return jsonResponse({ message: 'Ảnh không thuộc về đơn hàng này.' }, 404);
+
+      if (!env.BUCKET) return jsonResponse({ message: 'R2 storage chưa được cấu hình.' }, 500);
+
+      let media = await getGalleryMedia(env.DB, fileId, version);
+      if (!media && version) {
+        // Fall back to latest available version for self-heal UX
+        media = await getGalleryMedia(env.DB, fileId);
+      }
+      if (!media) return jsonResponse({ message: 'Ảnh chưa sẵn sàng.' }, 404);
+
+      const object = await env.BUCKET.get(media.r2Key);
+      if (!object) {
+        ctx.waitUntil(deleteGalleryMedia(env.DB, fileId, media.version));
+        return jsonResponse({ message: 'File ảnh không tồn tại trên R2.' }, 404);
+      }
+
+      ctx.waitUntil(touchGalleryMedia(env.DB, [fileId]));
+
+      const headers = new Headers();
+      object.writeHttpMetadata(headers);
+      headers.set('etag', object.httpEtag);
+      headers.set('Cache-Control', 'private, max-age=86400');
+      headers.set('Content-Type', 'image/jpeg');
+      return new Response(object.body, { headers });
+    }
+
+    // 7.46 Orders Gallery: Touch Viewport Images
+    if ((url.pathname.match(/^\/api\/orders\/\d+\/gallery\/touch$/) || url.pathname === '/api/gallery/touch') && request.method === 'POST') {
+      const err = requireAuth();
+      if (err) return err;
+
+      const body = await request.json().catch(() => ({})) as { fileIds?: string[] };
+      if (body.fileIds && body.fileIds.length > 0) {
+        await touchGalleryMedia(env.DB, body.fileIds.slice(0, 100));
+      }
+      return jsonResponse({ success: true });
+    }
+
+    // 7.47 Admin Settings: Thumbnail Cleanup and Clear
+    if (url.pathname === '/api/settings/thumbnails/cleanup' && request.method === 'POST') {
+      const err = requireAdmin();
+      if (err) return err;
+
+      const body = await request.json().catch(() => ({})) as { retentionDays?: number };
+      const res = await cleanupExpiredCloudGalleryMedia(env.DB, env.BUCKET, body.retentionDays);
+      return jsonResponse({
+        success: true,
+        filesDeleted: res.deletedCount,
+        bytesFreed: res.bytesFreed
+      });
+    }
+
+    if (url.pathname === '/api/settings/thumbnails/clear' && request.method === 'POST') {
+      const err = requireAdmin();
+      if (err) return err;
+
+      const res = await clearAllCloudGalleryMedia(env.DB, env.BUCKET);
+      return jsonResponse({
+        success: true,
+        filesDeleted: res.deletedCount
       });
     }
 
@@ -443,6 +757,84 @@ export default {
       } catch (err: any) {
         return jsonResponse({ success: false, message: err.message }, err instanceof OperationError ? err.status : 400);
       }
+    }
+
+    // 8.2 Bills: Get Label SVG
+    const billLabelMatch = url.pathname.match(/^\/api\/bills\/(\d+)\/label$/);
+    if (billLabelMatch && request.method === 'GET') {
+      const err = requireAdmin();
+      if (err) return err;
+
+      const id = parseInt(billLabelMatch[1], 10);
+      const bill = await getBillById(env.DB, id);
+      if (!bill) {
+        const orderIdParam = parseInt(url.searchParams.get('orderId') || '0', 10);
+        let fallbackOrder = orderIdParam > 0 ? await getOrderById(env.DB, orderIdParam) : null;
+        if (!fallbackOrder) {
+          const linked = await env.DB.prepare('SELECT id FROM cloud_orders WHERE customer_bill_id = ? LIMIT 1')
+            .bind(id)
+            .first<{ id: number }>();
+          if (linked?.id) fallbackOrder = await getOrderById(env.DB, linked.id);
+        }
+        if (!fallbackOrder) return jsonResponse({ message: 'Không tìm thấy hóa đơn.' }, 404);
+
+        const fallbackSvg = renderOrderLabelSvg(fallbackOrder, env.WORKSHOP_NAME);
+        return new Response(fallbackSvg, {
+          headers: {
+            'Content-Type': 'image/svg+xml; charset=utf-8',
+            'Cache-Control': 'no-cache',
+            ...CORS_HEADERS
+          }
+        });
+      }
+
+      const svg = renderBillLabelSvg(bill, env.WORKSHOP_NAME);
+      return new Response(svg, {
+        headers: {
+          'Content-Type': 'image/svg+xml; charset=utf-8',
+          'Cache-Control': 'no-cache',
+          ...CORS_HEADERS
+        }
+      });
+    }
+
+    // 8.3 Bills: Send Remote Print Command
+    const billPrintMatch = url.pathname.match(/^\/api\/bills\/(\d+)\/remote-print$/);
+    if (billPrintMatch && request.method === 'POST') {
+      const err = requireAdmin();
+      if (err) return err;
+
+      const billId = parseInt(billPrintMatch[1], 10);
+      const body = await request.json().catch(() => ({})) as { orderId?: number };
+      const bill = await getBillById(env.DB, billId);
+
+      let effectiveOrderId = body.orderId || 0;
+      if (!effectiveOrderId) {
+        const linkedOrder = await env.DB.prepare('SELECT id FROM cloud_orders WHERE customer_bill_id = ? LIMIT 1')
+          .bind(billId)
+          .first<{ id: number }>();
+        if (linkedOrder?.id) effectiveOrderId = linkedOrder.id;
+      }
+
+      if (!bill && !effectiveOrderId) {
+        return jsonResponse({ message: 'Không tìm thấy hóa đơn hoặc đơn hàng liên kết.' }, 404);
+      }
+
+      const cmd = await createPrintCommand(
+        env.DB,
+        effectiveOrderId,
+        bill ? billId : null,
+        bill ? 'print_bill_label' : 'print_order_label',
+        currentUser?.role
+      );
+
+      return jsonResponse({
+        success: true,
+        message: bill
+          ? 'Đã gửi lệnh in tem giao hàng tới máy in xưởng.'
+          : 'Đã gửi lệnh in tem đóng gói đơn hàng tới máy in xưởng.',
+        commandId: cmd.id
+      });
     }
 
     // 9. Bills: Get Bill JPEG image from R2

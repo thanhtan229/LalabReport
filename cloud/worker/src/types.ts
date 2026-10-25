@@ -59,6 +59,9 @@ export interface CloudBillDto {
   billType: string;
   customerId?: number | null;
   customerNameSnapshot: string;
+  phoneSnapshot?: string | null;
+  shippingAddressSnapshot?: string | null;
+  note?: string | null;
   periodDate: string;
   totalAmount: number;
   productSubtotal?: number | null;
@@ -118,6 +121,9 @@ export interface SyncBatchPayload {
     billType: string;
     customerId?: number | null;
     customerNameSnapshot: string;
+    phoneSnapshot?: string | null;
+    shippingAddressSnapshot?: string | null;
+    note?: string | null;
     periodDate: string;
     totalAmount: number;
     productSubtotal?: number | null;

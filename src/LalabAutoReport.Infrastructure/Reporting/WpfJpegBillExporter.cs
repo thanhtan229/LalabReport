@@ -749,8 +749,9 @@ public class WpfJpegBillExporter : IJpegBillExporter, IBillVisualRenderer
         };
         encoder.Frames.Add(BitmapFrame.Create(bitmap));
 
-        using var fileStream = new FileStream(destinationFilePath, FileMode.Create, FileAccess.Write);
-        encoder.Save(fileStream);
+        using var ms = new MemoryStream();
+        encoder.Save(ms);
+        WpfShippingLabelExporter.WriteFileResiliently(destinationFilePath, ms.ToArray());
     }
 
     private static void RenderPageToJpeg(CustomerBill bill, BillPageData page, string destinationFilePath, AppSettings? settings = null)
@@ -871,10 +872,15 @@ public class WpfJpegBillExporter : IJpegBillExporter, IBillVisualRenderer
 
         try
         {
+            using var fs = new FileStream(Path.GetFullPath(filePath), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var ms = new MemoryStream();
+            fs.CopyTo(ms);
+            ms.Position = 0;
+
             var bitmap = new BitmapImage();
             bitmap.BeginInit();
             bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.UriSource = new Uri(Path.GetFullPath(filePath), UriKind.Absolute);
+            bitmap.StreamSource = ms;
             bitmap.EndInit();
             bitmap.Freeze();
             return bitmap;

@@ -104,6 +104,9 @@ export async function getBillById(db: D1Database, id: number): Promise<CloudBill
     billType: row.bill_type,
     customerId: row.customer_id,
     customerNameSnapshot: row.customer_name_snapshot,
+    phoneSnapshot: row.phone_snapshot || null,
+    shippingAddressSnapshot: row.shipping_address_snapshot || null,
+    note: row.note || null,
     periodDate: row.period_date,
     totalAmount: row.total_amount,
     productSubtotal: row.product_subtotal,
@@ -212,14 +215,18 @@ export async function upsertSyncBatch(
         db.prepare(`
           INSERT INTO cloud_bills (
             id, bill_number, bill_type, customer_id, customer_name_snapshot,
+            phone_snapshot, shipping_address_snapshot, note,
             period_date, total_amount, is_paid, paid_at, lines_json, adjustments_json,
             has_jpeg, locked_at, exported_at, updated_at, product_subtotal, adjustments_total
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             bill_number = excluded.bill_number,
             bill_type = excluded.bill_type,
             customer_id = excluded.customer_id,
             customer_name_snapshot = excluded.customer_name_snapshot,
+            phone_snapshot = excluded.phone_snapshot,
+            shipping_address_snapshot = excluded.shipping_address_snapshot,
+            note = excluded.note,
             period_date = excluded.period_date,
             total_amount = excluded.total_amount,
             product_subtotal = excluded.product_subtotal,
@@ -232,6 +239,7 @@ export async function upsertSyncBatch(
             updated_at = excluded.updated_at
         `).bind(
           b.id, b.billNumber, b.billType, b.customerId || null, b.customerNameSnapshot,
+          b.phoneSnapshot || null, b.shippingAddressSnapshot || null, b.note || null,
           b.periodDate, b.totalAmount, b.isPaid ? 1 : 0, b.paidAt || null, b.linesJson, b.adjustmentsJson,
           b.hasJpeg ? 1 : 0, b.lockedAt || null, b.exportedAt || null, now, b.productSubtotal ?? null, b.adjustmentsTotal ?? null
         )

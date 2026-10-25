@@ -467,8 +467,9 @@ public class AppSettings
     public bool ShowOrderThumbnails { get; set; } = true;
     public string MobileAuthSecret { get; set; } = string.Empty;
 
-    // Thermal Label Printer Settings (75x100mm)
+    // Thermal Label Printer Settings (40x100mm default, 75x100mm optional)
     public string? ThermalPrinterName { get; set; }
+    public string ThermalLabelSize { get; set; } = ThermalLabelSizes.Size40x100;
     public bool AutoMarkDeliveredOnPrint { get; set; } = true;
 
     // System Tray & Background Daemon Settings
@@ -481,6 +482,11 @@ public class AppSettings
     public string CloudSyncSecret { get; set; } = "";
     public string? LastCloudSyncAt { get; set; }
     public string? LastCloudPullAt { get; set; }
+
+    // Thumbnail & Gallery Settings
+    public bool EnableThumbnailAutoCleanup { get; set; } = true;
+    public int ThumbnailRetentionDays { get; set; } = 60; // 30, 60, or 90
+    public string? LastThumbnailCleanupAt { get; set; }
 }
 
 /// <summary>
@@ -658,5 +664,11 @@ public class TogglePrintStatusResult
     public string? ErrorMessage { get; set; }
     public bool IsPrinted => NewStatus == PrintStatus.Printed;
     public bool IsPartial => NewStatus == PrintStatus.Partial;
+}
+
+public static class ThermalLabelSizes
+{
+    public const string Size40x100 = "40x100mm";
+    public const string Size75x100 = "75x100mm";
 }
 

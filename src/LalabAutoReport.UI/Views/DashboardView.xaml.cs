@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -207,10 +208,42 @@ public partial class DashboardView : UserControl
 
     private void Thumbnail_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (sender is FrameworkElement elem && elem.DataContext is OrderDisplayModel order && ViewModel != null)
+        if (sender is FrameworkElement elem && elem.DataContext is OrderDisplayModel order)
         {
-            ViewModel.OpenPreviewPopupCommand.Execute(order);
+            OpenGalleryForOrder(order.Id);
             this.Focus();
+        }
+    }
+
+    private void OpenOrderGallery_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement elem && elem.DataContext is OrderDisplayModel order)
+        {
+            OpenGalleryForOrder(order.Id);
+        }
+    }
+
+    private void OpenGalleryForOrder(long orderId)
+    {
+        try
+        {
+            var services = ((App)Application.Current).Services;
+            if (services == null) return;
+
+            var galleryService = services.GetRequiredService<LalabAutoReport.Core.Interfaces.IOrderGalleryService>();
+            var orderRepo = services.GetRequiredService<LalabAutoReport.Core.Interfaces.IOrderRepository>();
+            var settingsRepo = services.GetRequiredService<LalabAutoReport.Core.Interfaces.ISettingsRepository>();
+            var rootRepo = services.GetService<LalabAutoReport.Core.Interfaces.IRootFolderRepository>();
+
+            var win = new OrderGalleryWindow(orderId, galleryService, orderRepo, settingsRepo, rootRepo)
+            {
+                Owner = Window.GetWindow(this)
+            };
+            win.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Không thể mở thư viện ảnh: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
