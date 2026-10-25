@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -18,6 +20,7 @@ using LalabAutoReport.Server.Lifecycle;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -29,6 +32,7 @@ public class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
         // 1. Parse Command Line Arguments
         if (!TryParseArguments(args, out var cliOptions, out var parseError))
         {
@@ -102,6 +106,18 @@ public class Program
             {
                 Log.Error("Fail-Closed: Khởi tạo database thất bại. Dừng server.");
                 return 4;
+            }
+
+            // One-time startup database integrity check (logged once, not run per-request)
+            try
+            {
+                using var startupConn = connectionFactory.CreateConnection();
+                var integrity = startupConn.ExecuteScalar<string>("PRAGMA quick_check;");
+                Log.Information("Kiểm tra toàn vẹn database lúc khởi động (PRAGMA quick_check): {Result}", integrity);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Không thể chạy PRAGMA quick_check lúc khởi động: {Message}", ex.Message);
             }
 
             // 6. Check for subcommand: render-spike --bill-id <id> --out <dir>
@@ -228,43 +244,75 @@ public class Program
                     mobileServer.GetStatus().ErrorMessage ?? "Lỗi không xác định");
             }
 
-            // 8. Health Info Provider setup
-            Func<int> schemaVersionProvider = () =>
+            // 8. Health Info Provider setup with dynamic single-probe readiness evaluation (Blocker A)
+            Func<Task<ServerReadinessResult>> readinessEvaluator = async () =>
             {
+                var components = new Dictionary<string, string>();
+                bool guardAcquired = guard.IsAcquired;
+                bool mobileOk = mobileServer.IsRunning;
+
+                components["mobileApi"] = mobileOk ? "ready" : "unavailable";
+
+                if (!guardAcquired)
+                {
+                    components["database"] = "unavailable:lock_not_held";
+                    return new ServerReadinessResult(false, 0, components);
+                }
+
+                int schemaVersion = 0;
                 try
                 {
-                    using var conn = connectionFactory.CreateConnection();
-                    return conn.ExecuteScalar<int>("SELECT COALESCE(MAX(version), 0) FROM schema_migrations;");
-                }
-                catch
-                {
-                    return 0;
-                }
-            };
+                    var csb = new SqliteConnectionStringBuilder
+                    {
+                        DataSource = connectionFactory.DatabasePath,
+                        Mode = SqliteOpenMode.ReadOnly,
+                        DefaultTimeout = 2
+                    };
 
-            Func<Dictionary<string, string>> componentsProvider = () =>
-            {
-                bool dbOk = guard.IsAcquired;
-                bool mobileOk = mobileServer.IsRunning;
-                return new Dictionary<string, string>
-                {
-                    ["database"] = dbOk ? "ready" : "unavailable",
-                    ["mobileApi"] = mobileOk ? "ready" : "unavailable"
-                };
-            };
+                    using var conn = new SqliteConnection(csb.ToString());
+                    await conn.OpenAsync();
 
-            Func<bool> isReadyProvider = () =>
-            {
-                bool dbOk = guard.IsAcquired;
-                bool mobileOk = mobileServer.IsRunning;
-                return dbOk && mobileOk;
+                    using var cmd = conn.CreateCommand();
+                    cmd.CommandTimeout = 2;
+                    cmd.CommandText = "SELECT COALESCE(MAX(version), 0) FROM schema_migrations;";
+                    var versionScalar = await cmd.ExecuteScalarAsync();
+                    schemaVersion = Convert.ToInt32(versionScalar);
+
+                    if (schemaVersion < 24)
+                    {
+                        components["database"] = "unavailable:schema_outdated";
+                        return new ServerReadinessResult(false, schemaVersion, components);
+                    }
+
+                    // Cheap bounded availability probe (SELECT 1 FROM orders LIMIT 1)
+                    cmd.CommandText = "SELECT 1 FROM orders LIMIT 1;";
+                    await cmd.ExecuteScalarAsync();
+
+                    components["database"] = "ready";
+                }
+                catch (Exception ex)
+                {
+                    string reason = ex is SqliteException sqlEx
+                        ? $"unavailable:sql_error_{sqlEx.SqliteErrorCode}"
+                        : "unavailable:probe_failed";
+                    components["database"] = reason;
+                    return new ServerReadinessResult(false, 0, components);
+                }
+
+                bool isReady = mobileOk;
+                return new ServerReadinessResult(isReady, schemaVersion, components);
             };
 
             var healthProvider = new ServerHealthInfoProvider(
                 startedAtUtc: DateTimeOffset.UtcNow,
-                schemaVersionProvider: schemaVersionProvider,
-                isReadyProvider: isReadyProvider,
-                componentsProvider: componentsProvider);
+                schemaVersionProvider: () => 24,
+                isReadyProvider: () => guard.IsAcquired && mobileServer.IsRunning,
+                componentsProvider: () => new Dictionary<string, string>
+                {
+                    ["database"] = guard.IsAcquired ? "ready" : "unavailable",
+                    ["mobileApi"] = mobileServer.IsRunning ? "ready" : "unavailable"
+                },
+                readinessEvaluatorAsync: readinessEvaluator);
 
             // 9. Start Loopback Health Endpoints with Minimal WebApplication
             var builder = WebApplication.CreateBuilder();
@@ -281,10 +329,10 @@ public class Program
             var app = builder.Build();
 
             app.MapGet("/health/live", () => Results.Json(healthProvider.GetLiveHealth()));
-            app.MapGet("/health/ready", () =>
+            app.MapGet("/health/ready", async () =>
             {
-                var health = healthProvider.GetReadyHealth();
-                return healthProvider.IsReady
+                var (isReady, health) = await healthProvider.GetReadyHealthAsync();
+                return isReady
                     ? Results.Json(health)
                     : Results.Json(health, statusCode: 503);
             });
@@ -473,28 +521,47 @@ public class Program
             hashBefore = Convert.ToHexString(sha.ComputeHash(stream)).ToLowerInvariant();
         }
 
-        // Copy DB plus any sidecars (-wal, -shm) to a fresh temporary directory
-        string tempDir = Path.Combine(Path.GetTempPath(), "lalab_inv_snap_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDir);
+        // Create two isolated temp directories:
+        // tempDir1: receives raw copy of source DB + WAL + SHM (so uncheckpointed WAL commits are captured)
+        // tempDir2: receives clean, compacted single-file snapshot via SQLite Online Backup API (ADR D7)
+        string tempDir1 = Path.Combine(Path.GetTempPath(), "lalab_inv_wal_" + Guid.NewGuid().ToString("N"));
+        string tempDir2 = Path.Combine(Path.GetTempPath(), "lalab_inv_snap_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir1);
+        Directory.CreateDirectory(tempDir2);
+        string tempDb1 = Path.Combine(tempDir1, "lalab_autoreport.db");
+        string tempDb2 = Path.Combine(tempDir2, "lalab_autoreport.db");
 
         try
         {
-            string tempDbPath = Path.Combine(tempDir, "lalab_autoreport.db");
-            File.Copy(sourceDbPath, tempDbPath, overwrite: true);
+            // 1. Copy source DB and any WAL/SHM sidecars to tempDir1 with FileShare.ReadWrite
+            SafeCopyFile(sourceDbPath, tempDb1);
 
             string sourceWal = sourceDbPath + "-wal";
             if (File.Exists(sourceWal))
             {
-                File.Copy(sourceWal, tempDbPath + "-wal", overwrite: true);
+                SafeCopyFile(sourceWal, tempDb1 + "-wal");
             }
 
             string sourceShm = sourceDbPath + "-shm";
             if (File.Exists(sourceShm))
             {
-                File.Copy(sourceShm, tempDbPath + "-shm", overwrite: true);
+                try { SafeCopyFile(sourceShm, tempDb1 + "-shm"); } catch { }
             }
 
-            var inventoryService = new ServerInventoryService(tempDbPath);
+            // 2. Open tempDb1 normally so SQLite recovers any uncheckpointed WAL commits,
+            // then use SQLite Online Backup API to produce clean, compacted snapshot in tempDb2 (ADR D7)
+            using (var recoveredConn = new SqliteConnection($"Data Source={tempDb1};"))
+            {
+                await recoveredConn.OpenAsync();
+                using var destConn = new SqliteConnection($"Data Source={tempDb2};");
+                await destConn.OpenAsync();
+                recoveredConn.BackupDatabase(destConn);
+            }
+
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+
+            // 3. Query the compacted recovered snapshot
+            var inventoryService = new ServerInventoryService(tempDb2);
             var report = await inventoryService.GenerateReportAsync();
 
             string jsonOutput = JsonSerializer.Serialize(report, new JsonSerializerOptions
@@ -504,17 +571,16 @@ public class Program
 
             Console.WriteLine(jsonOutput);
         }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[LỖI INVENTORY] Lỗi truy vấn hoặc lược đồ cơ sở dữ liệu không hợp lệ: {ex.Message}");
+            return 8;
+        }
         finally
         {
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-            try
-            {
-                if (Directory.Exists(tempDir))
-                {
-                    Directory.Delete(tempDir, recursive: true);
-                }
-            }
-            catch { }
+            try { if (Directory.Exists(tempDir1)) Directory.Delete(tempDir1, recursive: true); } catch { }
+            try { if (Directory.Exists(tempDir2)) Directory.Delete(tempDir2, recursive: true); } catch { }
         }
 
         // Verify source DB file hash is unchanged
@@ -535,11 +601,20 @@ public class Program
         var filesAfter = dirInfo.GetFiles().ToDictionary(f => f.Name, f => (f.Length, f.LastWriteTimeUtc));
         if (filesBefore.Count != filesAfter.Count || filesBefore.Any(kv => !filesAfter.ContainsKey(kv.Key) || filesAfter[kv.Key] != kv.Value))
         {
-            Console.Error.WriteLine("[LỖI INVENTORY] Danh sách hoặc mtime tập tin trong thư mục nguồn bị thay đổi sau khi chạy dry-run!");
+            var diff = string.Join(", ", filesAfter.Keys.Except(filesBefore.Keys).Concat(filesBefore.Keys.Except(filesAfter.Keys)));
+            var mtimeDiff = string.Join(", ", filesBefore.Where(kv => filesAfter.ContainsKey(kv.Key) && filesAfter[kv.Key] != kv.Value).Select(kv => $"{kv.Key} (before={kv.Value.LastWriteTimeUtc}, after={filesAfter[kv.Key].LastWriteTimeUtc})"));
+            Console.Error.WriteLine($"[LỖI INVENTORY] Danh sách hoặc mtime tập tin trong thư mục nguồn bị thay đổi sau khi chạy dry-run! Files: {diff}; Mtimes: {mtimeDiff}");
             return 1;
         }
 
         return 0;
+    }
+
+    private static void SafeCopyFile(string source, string dest)
+    {
+        using var inStream = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var outStream = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None);
+        inStream.CopyTo(outStream);
     }
 
     private static void PrintUsage()
@@ -566,6 +641,7 @@ Mã thoát (Exit Codes):
   4: Khởi tạo dữ liệu thất bại (Fail-closed lifecycle / backup failure)
   6: Lỗi render-spike (không tìm thấy bill hoặc render lỗi)
   7: Không tìm thấy cơ sở dữ liệu cho subcommand inventory --dry-run
+  8: Lỗi truy vấn cơ sở dữ liệu hoặc lược đồ không hợp lệ (inventory --dry-run)
 ");
     }
 

@@ -2,8 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 
 namespace LalabAutoReport.Server.Health;
+
+public record ServerReadinessResult(
+    bool IsReady,
+    int? SchemaVersion,
+    Dictionary<string, string> Components
+);
 
 public class ServerHealthDto
 {
@@ -17,7 +24,7 @@ public class ServerHealthDto
     public string AssemblyVersion { get; set; } = string.Empty;
 
     [JsonPropertyName("schemaVersion")]
-    public int SchemaVersion { get; set; }
+    public int? SchemaVersion { get; set; }
 
     [JsonPropertyName("startedAtUtc")]
     public string StartedAtUtc { get; set; } = string.Empty;
@@ -41,6 +48,7 @@ public class ServerHealthInfoProvider
     private readonly Func<int>? _schemaVersionProvider;
     private readonly Func<bool>? _isReadyProvider;
     private readonly Func<Dictionary<string, string>>? _componentsProvider;
+    private readonly Func<Task<ServerReadinessResult>>? _readinessEvaluatorAsync;
 
     public string BuildId => _buildId;
     public string AssemblyVersion => _assemblyVersion;
@@ -50,12 +58,14 @@ public class ServerHealthInfoProvider
         DateTimeOffset? startedAtUtc = null,
         Func<int>? schemaVersionProvider = null,
         Func<bool>? isReadyProvider = null,
-        Func<Dictionary<string, string>>? componentsProvider = null)
+        Func<Dictionary<string, string>>? componentsProvider = null,
+        Func<Task<ServerReadinessResult>>? readinessEvaluatorAsync = null)
     {
         _startedAtUtc = startedAtUtc ?? DateTimeOffset.UtcNow;
         _schemaVersionProvider = schemaVersionProvider;
         _isReadyProvider = isReadyProvider;
         _componentsProvider = componentsProvider;
+        _readinessEvaluatorAsync = readinessEvaluatorAsync;
 
         var assembly = typeof(ServerHealthInfoProvider).Assembly;
         var infoVersionAttr = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
@@ -72,8 +82,9 @@ public class ServerHealthInfoProvider
         DateTimeOffset? startedAtUtc = null,
         Func<int>? schemaVersionProvider = null,
         Func<bool>? isReadyProvider = null,
-        Func<Dictionary<string, string>>? componentsProvider = null)
-        : this(startedAtUtc, schemaVersionProvider, isReadyProvider, componentsProvider)
+        Func<Dictionary<string, string>>? componentsProvider = null,
+        Func<Task<ServerReadinessResult>>? readinessEvaluatorAsync = null)
+        : this(startedAtUtc, schemaVersionProvider, isReadyProvider, componentsProvider, readinessEvaluatorAsync)
     {
     }
 
@@ -91,10 +102,27 @@ public class ServerHealthInfoProvider
         };
     }
 
-    public ServerHealthDto GetReadyHealth()
+    public async Task<(bool IsReady, ServerHealthDto Health)> GetReadyHealthAsync()
     {
+        if (_readinessEvaluatorAsync != null)
+        {
+            var result = await _readinessEvaluatorAsync();
+            var dto = new ServerHealthDto
+            {
+                Status = result.IsReady ? "Ready" : "NotReady",
+                BuildId = _buildId,
+                AssemblyVersion = _assemblyVersion,
+                SchemaVersion = result.SchemaVersion ?? 0,
+                StartedAtUtc = _startedAtUtc.ToString("o"),
+                Cloud = "disabled",
+                AutoScan = "disabled",
+                Components = result.Components
+            };
+            return (result.IsReady, dto);
+        }
+
         bool ready = IsReady;
-        return new ServerHealthDto
+        var defaultDto = new ServerHealthDto
         {
             Status = ready ? "Ready" : "NotReady",
             BuildId = _buildId,
@@ -105,5 +133,12 @@ public class ServerHealthInfoProvider
             AutoScan = "disabled",
             Components = _componentsProvider?.Invoke()
         };
+        return (ready, defaultDto);
+    }
+
+    public ServerHealthDto GetReadyHealth()
+    {
+        var task = GetReadyHealthAsync();
+        return task.GetAwaiter().GetResult().Health;
     }
 }

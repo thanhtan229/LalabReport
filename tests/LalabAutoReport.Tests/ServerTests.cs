@@ -447,6 +447,329 @@ public class ServerTests
         }
     }
 
+    [Fact]
+    public async Task InventoryDryRun_WithUncheckpointedWal_CapturesCommittedRows_AndLeavesSourceUntouched()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "lalab_inv_wal_test_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        string dbPath = Path.Combine(tempDir, "lalab_autoreport.db");
+
+        SqliteConnection? writerConn = null;
+        try
+        {
+            var factory = new SqliteConnectionFactory(dbPath);
+            var migrator = new DatabaseMigrator(factory);
+            await migrator.MigrateAsync();
+
+            // 1. Initial seeded data
+            using (var conn = factory.CreateConnection())
+            {
+                await conn.ExecuteAsync("INSERT INTO customers (id, canonical_name, created_at, updated_at) VALUES (1, 'Khách 1', '2026-10-25', '2026-10-25');");
+                await conn.ExecuteAsync("PRAGMA wal_checkpoint(TRUNCATE);");
+            }
+            SqliteConnection.ClearAllPools();
+
+            // 2. Open writer connection with wal_autocheckpoint=0 and insert a new customer into WAL
+            writerConn = new SqliteConnection($"Data Source={dbPath};");
+            await writerConn.OpenAsync();
+            await writerConn.ExecuteAsync("PRAGMA wal_autocheckpoint = 0;");
+            await writerConn.ExecuteAsync("INSERT INTO customers (id, canonical_name, created_at, updated_at) VALUES (2, 'Khách WAL Uncheckpointed', '2026-10-25', '2026-10-25');");
+
+            // Verify WAL file exists and has content
+            string walPath = dbPath + "-wal";
+            File.Exists(walPath).Should().BeTrue("WAL file must exist after uncheckpointed commit");
+            new FileInfo(walPath).Length.Should().BeGreaterThan(0);
+
+            // Baseline hash of main db file and directory listing
+            var dirInfo = new DirectoryInfo(tempDir);
+            var filesBefore = dirInfo.GetFiles().ToDictionary(f => f.Name, f => (f.Length, f.LastWriteTimeUtc));
+            string hashBefore;
+            using (var sha = SHA256.Create())
+            using (var stream = new FileStream(dbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                hashBefore = Convert.ToHexString(sha.ComputeHash(stream)).ToLowerInvariant();
+            }
+
+            // 3. Run Server.exe inventory --dry-run
+            string serverExe = FindServerExePath();
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = serverExe,
+                Arguments = $"inventory --dry-run --data-dir \"{tempDir}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(startInfo);
+            process.Should().NotBeNull();
+            string stdout = await process!.StandardOutput.ReadToEndAsync();
+            string stderr = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            process.ExitCode.Should().Be(0, $"inventory dry-run failed with stderr: {stderr}");
+
+            // 4. Assert new customer from uncheckpointed WAL is included in customers count
+            using var doc = JsonDocument.Parse(stdout);
+            var root = doc.RootElement;
+            root.GetProperty("customers").GetInt32().Should().Be(2, "Uncheckpointed customer in WAL must be captured in inventory report");
+
+            // 5. Assert source DB hash and directory listing are completely unchanged
+            string hashAfter;
+            using (var sha = SHA256.Create())
+            using (var stream = new FileStream(dbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                hashAfter = Convert.ToHexString(sha.ComputeHash(stream)).ToLowerInvariant();
+            }
+            hashAfter.Should().Be(hashBefore, "Source DB file hash must remain unchanged");
+
+            var filesAfter = dirInfo.GetFiles().ToDictionary(f => f.Name, f => (f.Length, f.LastWriteTimeUtc));
+            filesAfter.Keys.Should().BeEquivalentTo(filesBefore.Keys, "No files should be added or removed from source dir");
+            filesAfter[Path.GetFileName(dbPath)].Length.Should().Be(filesBefore[Path.GetFileName(dbPath)].Length);
+        }
+        finally
+        {
+            if (writerConn != null)
+            {
+                try { writerConn.Close(); writerConn.Dispose(); } catch { }
+            }
+            SqliteConnection.ClearAllPools();
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task InventoryDryRun_WhenGrandTotalColumnMissing_Exits8_AndOutputsNoJson()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "lalab_inv_broken_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        string dbPath = Path.Combine(tempDir, "lalab_autoreport.db");
+
+        try
+        {
+            var factory = new SqliteConnectionFactory(dbPath);
+            var migrator = new DatabaseMigrator(factory);
+            await migrator.MigrateAsync();
+
+            using (var conn = factory.CreateConnection())
+            {
+                await conn.ExecuteAsync("INSERT INTO customers (id, canonical_name, created_at, updated_at) VALUES (1, 'Khách 1', '2026-10-25', '2026-10-25');");
+                await conn.ExecuteAsync(@"
+                    INSERT INTO customer_bills (id, bill_number, customer_id, customer_name_snapshot, period_start, period_end, status, grand_total, is_paid, created_at, updated_at)
+                    VALUES (1, 'BILL-01', 1, 'Khách 1', '2026-10-25', '2026-10-25', 'Locked', 100000, 0, '2026-10-25', '2026-10-25');
+                ");
+
+                // Drop grand_total column by recreating customer_bills without it
+                await conn.ExecuteAsync(@"
+                    CREATE TABLE customer_bills_broken (
+                        id INTEGER PRIMARY KEY,
+                        bill_number TEXT,
+                        customer_id INTEGER,
+                        customer_name_snapshot TEXT,
+                        period_start TEXT,
+                        period_end TEXT,
+                        status TEXT,
+                        created_at TEXT,
+                        updated_at TEXT
+                    );
+                    INSERT INTO customer_bills_broken (id, bill_number, customer_id, customer_name_snapshot, period_start, period_end, status, created_at, updated_at)
+                    SELECT id, bill_number, customer_id, customer_name_snapshot, period_start, period_end, status, created_at, updated_at FROM customer_bills;
+                    DROP TABLE customer_bills;
+                    ALTER TABLE customer_bills_broken RENAME TO customer_bills;
+                ");
+            }
+            SqliteConnection.ClearAllPools();
+
+            string serverExe = FindServerExePath();
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = serverExe,
+                Arguments = $"inventory --dry-run --data-dir \"{tempDir}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(startInfo);
+            process.Should().NotBeNull();
+            string stdout = await process!.StandardOutput.ReadToEndAsync();
+            string stderr = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            process.ExitCode.Should().Be(8, $"Expected exit code 8 on broken required schema, got {process.ExitCode}. Stderr: {stderr}");
+            stdout.Trim().Should().BeEmpty("No JSON report must be emitted to stdout on exit 8");
+            stderr.Should().Contain("INVENTORY");
+            stderr.Should().Contain("grand_total");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task InventoryDryRun_WhenOptionalLegacyTableDropped_Exits0_WithNullField()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "lalab_inv_opt_drop_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        string dbPath = Path.Combine(tempDir, "lalab_autoreport.db");
+
+        try
+        {
+            var factory = new SqliteConnectionFactory(dbPath);
+            var migrator = new DatabaseMigrator(factory);
+            await migrator.MigrateAsync();
+
+            using (var conn = factory.CreateConnection())
+            {
+                await conn.ExecuteAsync("INSERT INTO customers (id, canonical_name, created_at, updated_at) VALUES (1, 'Khách 1', '2026-10-25', '2026-10-25');");
+                // Drop optional legacy table cloud_sync_queue
+                await conn.ExecuteAsync("DROP TABLE cloud_sync_queue;");
+            }
+            SqliteConnection.ClearAllPools();
+
+            string serverExe = FindServerExePath();
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = serverExe,
+                Arguments = $"inventory --dry-run --data-dir \"{tempDir}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(startInfo);
+            process.Should().NotBeNull();
+            string stdout = await process!.StandardOutput.ReadToEndAsync();
+            string stderr = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            process.ExitCode.Should().Be(0, $"Expected exit code 0 when dropping optional legacy table, got {process.ExitCode}. Stderr: {stderr}");
+            using var doc = JsonDocument.Parse(stdout);
+            var root = doc.RootElement;
+            root.GetProperty("cloud_sync_queue_pending").ValueKind.Should().Be(JsonValueKind.Null);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task InventoryDryRun_LockedBillsSnapshotSha256_SensitivityAndDeterminism()
+    {
+        string tempDb = Path.Combine(Path.GetTempPath(), "lalab_hash_test_" + Guid.NewGuid().ToString("N") + ".db");
+        try
+        {
+            var factory = new SqliteConnectionFactory(tempDb);
+            var migrator = new DatabaseMigrator(factory);
+            await migrator.MigrateAsync();
+
+            using (var conn = factory.CreateConnection())
+            {
+                await conn.ExecuteAsync("INSERT INTO customers (id, canonical_name, created_at, updated_at) VALUES (1, 'Khách A', '2026-10-25', '2026-10-25');");
+                await conn.ExecuteAsync("INSERT INTO orders (id, work_date, customer_id, original_folder_name, relative_path, status, created_at, updated_at) VALUES (1, '2026-10-25', 1, 'ORD-1', '2026-10-25/ORD-1', 'Completed', '2026-10-25', '2026-10-25');");
+                await conn.ExecuteAsync("INSERT INTO scan_snapshots (id, order_id, started_at, scan_scope, status, app_version) VALUES (1, 1, '2026-10-25', 'Full', 'Completed', '1.0.0');");
+                await conn.ExecuteAsync("INSERT INTO order_item_scans (id, scan_snapshot_id, order_id, specification_folder_name, specification_relative_path, source_count, print_folder_status, scan_status) VALUES (1, 1, 1, 'Item 1', 'Item 1', 10, 'Resolved', 'Success');");
+
+                // Locked customer bill with lines
+                await conn.ExecuteAsync(@"
+                    INSERT INTO customer_bills (id, bill_number, bill_type, customer_id, customer_name_snapshot, period_start, period_end, status, grand_total, product_subtotal, adjustments_total, is_paid, locked_at, note, created_at, updated_at)
+                    VALUES (1, 'BILL-LOCKED-01', 'Retail', 1, 'Khách A', '2026-10-25', '2026-10-25', 'Locked', 100000, 100000, 0, 0, '2026-10-25T10:00:00Z', 'Note 1', '2026-10-25', '2026-10-25');
+                ");
+                await conn.ExecuteAsync(@"
+                    INSERT INTO customer_bill_lines (id, bill_id, order_id, product_job_id, product_specification_id, product_name_snapshot, billing_method_snapshot, scanned_quantity, billed_quantity, configured_unit_price, billed_unit_price, line_total, is_included, sort_order, folder_resolution_mode_snapshot)
+                    VALUES (1, 1, 1, 1, 1, 'In Ảnh 10x15', 'FileCount', 10, 10, 10000, 10000, 100000, 1, 1, 'AutoResolved');
+                ");
+
+                // Unlocked (draft) bill
+                await conn.ExecuteAsync(@"
+                    INSERT INTO customer_bills (id, bill_number, bill_type, customer_id, customer_name_snapshot, period_start, period_end, status, grand_total, product_subtotal, adjustments_total, is_paid, created_at, updated_at)
+                    VALUES (2, 'BILL-DRAFT-02', 'Retail', 1, 'Khách A', '2026-10-25', '2026-10-25', 'Draft', 50000, 50000, 0, 0, '2026-10-25', '2026-10-25');
+                ");
+            }
+            SqliteConnection.ClearAllPools();
+
+            var service = new ServerInventoryService(tempDb);
+
+            // 1. Baseline report & Determinism check
+            var reportBaseline1 = await service.GenerateReportAsync();
+            var reportBaseline2 = await service.GenerateReportAsync();
+            string baselineHash = reportBaseline1.LockedBillsSnapshotSha256;
+            baselineHash.Should().NotBeNullOrWhiteSpace();
+            reportBaseline2.LockedBillsSnapshotSha256.Should().Be(baselineHash, "Snapshot hash must be deterministic across consecutive runs");
+
+            // 2. Mutate customer_name_snapshot on locked bill -> Hash MUST change
+            using (var conn = factory.CreateConnection())
+            {
+                await conn.ExecuteAsync("UPDATE customer_bills SET customer_name_snapshot = 'Khách B' WHERE id = 1;");
+            }
+            SqliteConnection.ClearAllPools();
+            var reportMutCustomer = await service.GenerateReportAsync();
+            reportMutCustomer.LockedBillsSnapshotSha256.Should().NotBe(baselineHash, "Changing customer_name_snapshot on locked bill must alter snapshot hash");
+
+            // Revert customer_name_snapshot -> Hash must revert
+            using (var conn = factory.CreateConnection())
+            {
+                await conn.ExecuteAsync("UPDATE customer_bills SET customer_name_snapshot = 'Khách A' WHERE id = 1;");
+            }
+            SqliteConnection.ClearAllPools();
+            var reportRevertedCustomer = await service.GenerateReportAsync();
+            reportRevertedCustomer.LockedBillsSnapshotSha256.Should().Be(baselineHash, "Reverting customer_name_snapshot must restore baseline hash");
+
+            // 3. Mutate locked line billed_quantity -> Hash MUST change
+            using (var conn = factory.CreateConnection())
+            {
+                await conn.ExecuteAsync("UPDATE customer_bill_lines SET billed_quantity = 15 WHERE id = 1;");
+            }
+            SqliteConnection.ClearAllPools();
+            var reportMutLine = await service.GenerateReportAsync();
+            reportMutLine.LockedBillsSnapshotSha256.Should().NotBe(baselineHash, "Changing line quantity on locked bill must alter snapshot hash");
+
+            // Revert line quantity
+            using (var conn = factory.CreateConnection())
+            {
+                await conn.ExecuteAsync("UPDATE customer_bill_lines SET billed_quantity = 10 WHERE id = 1;");
+            }
+            SqliteConnection.ClearAllPools();
+
+            // 4. Mutate locked_at, note, or bill_type -> Hash MUST change
+            using (var conn = factory.CreateConnection())
+            {
+                await conn.ExecuteAsync("UPDATE customer_bills SET note = 'Altered Note' WHERE id = 1;");
+            }
+            SqliteConnection.ClearAllPools();
+            var reportMutNote = await service.GenerateReportAsync();
+            reportMutNote.LockedBillsSnapshotSha256.Should().NotBe(baselineHash, "Changing note on locked bill must alter snapshot hash");
+
+            // Revert note
+            using (var conn = factory.CreateConnection())
+            {
+                await conn.ExecuteAsync("UPDATE customer_bills SET note = 'Note 1' WHERE id = 1;");
+            }
+            SqliteConnection.ClearAllPools();
+
+            // 5. Mutate an UNLOCKED (Draft) bill -> Hash MUST NOT change!
+            using (var conn = factory.CreateConnection())
+            {
+                await conn.ExecuteAsync("UPDATE customer_bills SET grand_total = 999999, note = 'Draft modified' WHERE id = 2;");
+            }
+            SqliteConnection.ClearAllPools();
+            var reportMutDraft = await service.GenerateReportAsync();
+            reportMutDraft.LockedBillsSnapshotSha256.Should().Be(baselineHash, "Modifying an unlocked draft bill must NOT alter locked bills snapshot hash");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (File.Exists(tempDb)) File.Delete(tempDb); } catch { }
+        }
+    }
+
     #endregion
 
     #region 5. Health Info Provider & Endpoint Tests
@@ -633,6 +956,121 @@ public class ServerTests
                 json.Should().NotContainEquivalentOf("pin");
                 json.Should().NotContainEquivalentOf("secret");
                 json.Should().NotContainEquivalentOf("token");
+            }
+        }
+        finally
+        {
+            if (serverProcess != null && !serverProcess.HasExited)
+            {
+                try { serverProcess.Kill(entireProcessTree: true); } catch { }
+            }
+            SqliteConnection.ClearAllPools();
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task Readiness_WhenSchemaMigrationsDropped_Returns503_DatabaseUnavailable_AndRecoversWhenRestored()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "lalab_db_probe_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        int mobilePort = GetAvailablePort();
+        int healthPort = GetAvailablePort();
+
+        Process? serverProcess = null;
+        try
+        {
+            string serverExe = FindServerExePath();
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = serverExe,
+                Arguments = $"--data-dir \"{tempDir}\" --port {mobilePort} --health-port {healthPort}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            serverProcess = Process.Start(startInfo);
+            serverProcess.Should().NotBeNull();
+
+            using var httpClient = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{healthPort}") };
+
+            // 1. Wait for server to become Ready
+            HttpResponseMessage? readyResp = null;
+            for (int i = 0; i < 20; i++)
+            {
+                try
+                {
+                    readyResp = await httpClient.GetAsync("/health/ready");
+                    if (readyResp.IsSuccessStatusCode) break;
+                }
+                catch
+                {
+                    await Task.Delay(250);
+                }
+            }
+
+            readyResp.Should().NotBeNull();
+            readyResp!.StatusCode.Should().Be(HttpStatusCode.OK);
+            string readyJson = await readyResp.Content.ReadAsStringAsync();
+            using (var doc = JsonDocument.Parse(readyJson))
+            {
+                doc.RootElement.GetProperty("status").GetString().Should().Be("Ready");
+                doc.RootElement.GetProperty("components").GetProperty("database").GetString().Should().Be("ready");
+            }
+
+            // 2. Drop schema_migrations on the running database
+            string dbPath = Path.Combine(tempDir, "lalab_autoreport.db");
+            using (var conn = new SqliteConnection($"Data Source={dbPath};"))
+            {
+                await conn.OpenAsync();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "DROP TABLE schema_migrations;";
+                await cmd.ExecuteNonQueryAsync();
+            }
+            SqliteConnection.ClearAllPools();
+
+            // 3. /health/ready must immediately return 503 NotReady with database unavailable
+            var notReadyResp = await httpClient.GetAsync("/health/ready");
+            notReadyResp.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            string notReadyJson = await notReadyResp.Content.ReadAsStringAsync();
+            using (var doc = JsonDocument.Parse(notReadyJson))
+            {
+                var root = doc.RootElement;
+                root.GetProperty("status").GetString().Should().Be("NotReady");
+                root.GetProperty("components").GetProperty("database").GetString().Should().Contain("unavailable");
+            }
+
+            // /health/live must STILL return 200 Live
+            var liveResp = await httpClient.GetAsync("/health/live");
+            liveResp.StatusCode.Should().Be(HttpStatusCode.OK);
+            string liveJson = await liveResp.Content.ReadAsStringAsync();
+            using (var doc = JsonDocument.Parse(liveJson))
+            {
+                doc.RootElement.GetProperty("status").GetString().Should().Be("Live");
+            }
+
+            // 4. Restore valid schema_migrations table with version 24
+            using (var conn = new SqliteConnection($"Data Source={dbPath};"))
+            {
+                await conn.OpenAsync();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY); INSERT INTO schema_migrations VALUES (24);";
+                await cmd.ExecuteNonQueryAsync();
+            }
+            SqliteConnection.ClearAllPools();
+
+            // 5. Next request to /health/ready must recover to 200 Ready!
+            var recoveredResp = await httpClient.GetAsync("/health/ready");
+            recoveredResp.StatusCode.Should().Be(HttpStatusCode.OK);
+            string recoveredJson = await recoveredResp.Content.ReadAsStringAsync();
+            using (var doc = JsonDocument.Parse(recoveredJson))
+            {
+                var root = doc.RootElement;
+                root.GetProperty("status").GetString().Should().Be("Ready");
+                root.GetProperty("components").GetProperty("database").GetString().Should().Be("ready");
             }
         }
         finally
