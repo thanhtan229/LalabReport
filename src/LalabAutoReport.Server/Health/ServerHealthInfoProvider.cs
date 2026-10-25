@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Text.Json.Serialization;
 
@@ -18,9 +19,6 @@ public class ServerHealthDto
     [JsonPropertyName("schemaVersion")]
     public int SchemaVersion { get; set; }
 
-    [JsonPropertyName("dataDir")]
-    public string DataDir { get; set; } = string.Empty;
-
     [JsonPropertyName("startedAtUtc")]
     public string StartedAtUtc { get; set; } = string.Empty;
 
@@ -29,31 +27,35 @@ public class ServerHealthDto
 
     [JsonPropertyName("autoScan")]
     public string AutoScan { get; set; } = "disabled";
+
+    [JsonPropertyName("components")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, string>? Components { get; set; }
 }
 
 public class ServerHealthInfoProvider
 {
-    private readonly string _dataDir;
     private readonly DateTimeOffset _startedAtUtc;
     private readonly string _buildId;
     private readonly string _assemblyVersion;
     private readonly Func<int>? _schemaVersionProvider;
     private readonly Func<bool>? _isReadyProvider;
+    private readonly Func<Dictionary<string, string>>? _componentsProvider;
 
     public string BuildId => _buildId;
     public string AssemblyVersion => _assemblyVersion;
     public bool IsReady => _isReadyProvider?.Invoke() ?? false;
 
     public ServerHealthInfoProvider(
-        string dataDir,
         DateTimeOffset? startedAtUtc = null,
         Func<int>? schemaVersionProvider = null,
-        Func<bool>? isReadyProvider = null)
+        Func<bool>? isReadyProvider = null,
+        Func<Dictionary<string, string>>? componentsProvider = null)
     {
-        _dataDir = dataDir;
         _startedAtUtc = startedAtUtc ?? DateTimeOffset.UtcNow;
         _schemaVersionProvider = schemaVersionProvider;
         _isReadyProvider = isReadyProvider;
+        _componentsProvider = componentsProvider;
 
         var assembly = typeof(ServerHealthInfoProvider).Assembly;
         var infoVersionAttr = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
@@ -65,6 +67,16 @@ public class ServerHealthInfoProvider
         _buildId = !string.IsNullOrWhiteSpace(infoVersionAttr) ? $"{infoVersionAttr}+{asmVer}" : asmVer;
     }
 
+    public ServerHealthInfoProvider(
+        string? dataDir,
+        DateTimeOffset? startedAtUtc = null,
+        Func<int>? schemaVersionProvider = null,
+        Func<bool>? isReadyProvider = null,
+        Func<Dictionary<string, string>>? componentsProvider = null)
+        : this(startedAtUtc, schemaVersionProvider, isReadyProvider, componentsProvider)
+    {
+    }
+
     public ServerHealthDto GetLiveHealth()
     {
         return new ServerHealthDto
@@ -73,7 +85,6 @@ public class ServerHealthInfoProvider
             BuildId = _buildId,
             AssemblyVersion = _assemblyVersion,
             SchemaVersion = _schemaVersionProvider?.Invoke() ?? 0,
-            DataDir = _dataDir,
             StartedAtUtc = _startedAtUtc.ToString("o"),
             Cloud = "disabled",
             AutoScan = "disabled"
@@ -85,14 +96,14 @@ public class ServerHealthInfoProvider
         bool ready = IsReady;
         return new ServerHealthDto
         {
-            Status = ready ? "Ready" : "Starting",
+            Status = ready ? "Ready" : "NotReady",
             BuildId = _buildId,
             AssemblyVersion = _assemblyVersion,
             SchemaVersion = _schemaVersionProvider?.Invoke() ?? 0,
-            DataDir = _dataDir,
             StartedAtUtc = _startedAtUtc.ToString("o"),
             Cloud = "disabled",
-            AutoScan = "disabled"
+            AutoScan = "disabled",
+            Components = _componentsProvider?.Invoke()
         };
     }
 }

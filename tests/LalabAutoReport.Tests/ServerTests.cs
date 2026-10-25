@@ -1,8 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Diagnostics;
 using System.IO;
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
@@ -280,6 +285,10 @@ public class ServerTests
             report.CustomerBills.Should().Be(1);
             report.Bills.Should().Be(1);
             report.LockedBills.Should().Be(2); // 1 V1 bill + 1 V2 customer_bill
+            report.LockedBillsCount.Should().Be(2);
+            report.LockedBillsTotalAmountVnd.Should().Be(100000);
+            report.LockedBillsSha256.Should().NotBeNullOrWhiteSpace();
+            report.Customers.Should().Be(1);
             report.CloudSyncQueuePending.Should().Be(1);
             report.CloudOperationalOutboxPending.Should().Be(1);
             report.CloudPrintCommandLedgerUnacked.Should().Be(1);
@@ -299,19 +308,162 @@ public class ServerTests
         }
     }
 
+    [Fact]
+    public async Task InventoryDryRun_OnV23Database_LeavesSchemaAtV23_AndDoesNotCreateFilesOrMutateHash()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "lalab_inv_v23_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        string dbPath = Path.Combine(tempDir, "lalab_autoreport.db");
+
+        try
+        {
+            var factory = new SqliteConnectionFactory(dbPath);
+            var migrator = new DatabaseMigrator(factory);
+
+            // 1. Migrate only up to V23 (prior to V24 ServerIdentity)
+            await migrator.MigrateToVersionAsync(23);
+
+            // Populate fixture rows
+            using (var conn = factory.CreateConnection())
+            {
+                await conn.ExecuteAsync("INSERT INTO customers (id, canonical_name, created_at, updated_at) VALUES (1, 'Khách V23', '2026-10-25', '2026-10-25');");
+                await conn.ExecuteAsync("INSERT INTO customer_aliases (id, customer_id, alias_text, normalized_alias, created_at) VALUES (1, 1, 'K. V23', 'k v23', '2026-10-25');");
+                await conn.ExecuteAsync("INSERT INTO root_folders (id, name, full_path, is_default, is_active, created_at, updated_at) VALUES (1, 'Root 1', 'C:\\Data', 1, 1, '2026-10-25', '2026-10-25');");
+                await conn.ExecuteAsync(@"
+                    INSERT INTO customer_bills (id, bill_number, customer_id, customer_name_snapshot, period_start, period_end, status, grand_total, is_paid, created_at, updated_at)
+                    VALUES (1, 'BILL-V23-01', 1, 'Khách V23', '2026-10-25', '2026-10-25', 'Locked', 250000, 0, '2026-10-25', '2026-10-25');
+                ");
+            }
+
+            SqliteConnection.ClearAllPools();
+
+            // Snapshot directory files and DB hash
+            var dirInfo = new DirectoryInfo(tempDir);
+            var filesBefore = dirInfo.GetFiles().ToDictionary(f => f.Name, f => (f.Length, f.LastWriteTimeUtc));
+            string hashBefore;
+            using (var sha = SHA256.Create())
+            using (var stream = new FileStream(dbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                hashBefore = Convert.ToHexString(sha.ComputeHash(stream)).ToLowerInvariant();
+            }
+
+            // 2. Run actual Server process with inventory --dry-run
+            string serverExe = FindServerExePath();
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = serverExe,
+                Arguments = $"inventory --dry-run --data-dir \"{tempDir}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(startInfo);
+            process.Should().NotBeNull();
+            string stdout = await process!.StandardOutput.ReadToEndAsync();
+            string stderr = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            process.ExitCode.Should().Be(0, $"inventory --dry-run failed with stderr: {stderr}");
+
+            // 3. Assert schema_migrations max version is STILL 23
+            using (var conn = factory.CreateConnection())
+            {
+                int maxVersion = await conn.ExecuteScalarAsync<int>("SELECT MAX(version) FROM schema_migrations;");
+                maxVersion.Should().Be(23, "inventory dry-run must NOT migrate the database");
+            }
+            SqliteConnection.ClearAllPools();
+
+            // 4. Assert DB SHA-256 hash is unchanged
+            string hashAfter;
+            using (var sha = SHA256.Create())
+            using (var stream = new FileStream(dbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                hashAfter = Convert.ToHexString(sha.ComputeHash(stream)).ToLowerInvariant();
+            }
+            hashAfter.Should().Be(hashBefore, "Source DB hash must remain identical");
+
+            // 5. Assert no logs/, backups/, server.lock, or other files were created in source directory
+            var filesAfter = dirInfo.GetFiles().ToDictionary(f => f.Name, f => (f.Length, f.LastWriteTimeUtc));
+            filesAfter.Keys.Should().BeEquivalentTo(filesBefore.Keys, "No new files must be created in the source directory");
+            Directory.Exists(Path.Combine(tempDir, "logs")).Should().BeFalse("logs dir must not be created");
+            Directory.Exists(Path.Combine(tempDir, "backups")).Should().BeFalse("backups dir must not be created");
+            File.Exists(Path.Combine(tempDir, "server.lock")).Should().BeFalse("server.lock must not be created");
+
+            // 6. Assert new report fields exist in stdout JSON
+            using var doc = JsonDocument.Parse(stdout);
+            var root = doc.RootElement;
+            root.GetProperty("schema_migrations_max_version").GetInt32().Should().Be(23);
+            root.GetProperty("locked_bills_count").GetInt32().Should().Be(1);
+            root.GetProperty("locked_bills_total_amount_vnd").GetInt64().Should().Be(250000);
+            root.GetProperty("locked_bills_sha256").GetString().Should().NotBeNullOrWhiteSpace();
+            root.GetProperty("outstanding_debt_vnd").GetInt64().Should().Be(250000);
+            root.GetProperty("customers").GetInt32().Should().Be(1);
+            root.GetProperty("customer_aliases").GetInt32().Should().Be(1);
+            root.TryGetProperty("cloud_endpoint", out _).Should().BeTrue();
+            root.TryGetProperty("cloud_stream_id", out _).Should().BeTrue();
+            root.TryGetProperty("cloud_last_cursor", out _).Should().BeTrue();
+            root.TryGetProperty("cloud_requires_reconciliation", out _).Should().BeTrue();
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task InventoryDryRun_WhenDatabaseDoesNotExist_ReturnsExit7_AndDoesNotCreateDirectory()
+    {
+        string baseDir = Path.Combine(Path.GetTempPath(), "lalab_inv_missing_" + Guid.NewGuid().ToString("N"));
+        string missingDir = Path.Combine(baseDir, "nonexistent_subfolder");
+
+        try
+        {
+            string serverExe = FindServerExePath();
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = serverExe,
+                Arguments = $"inventory --dry-run --data-dir \"{missingDir}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(startInfo);
+            process.Should().NotBeNull();
+            string stdout = await process!.StandardOutput.ReadToEndAsync();
+            string stderr = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            process.ExitCode.Should().Be(7, $"Expected exit code 7 for nonexistent database file, got {process.ExitCode}. Stderr: {stderr}");
+            Directory.Exists(missingDir).Should().BeFalse("Directory must not be created when DB file does not exist");
+        }
+        finally
+        {
+            try { if (Directory.Exists(baseDir)) Directory.Delete(baseDir, recursive: true); } catch { }
+        }
+    }
+
     #endregion
 
-    #region 5. Health Info Provider Tests
+    #region 5. Health Info Provider & Endpoint Tests
 
     [Fact]
     public void HealthInfoProvider_ReturnsExpectedState_BeforeAndAfterReady()
     {
         bool isReady = false;
         var provider = new ServerHealthInfoProvider(
-            dataDir: @"C:\Data\Server",
             startedAtUtc: new DateTimeOffset(2026, 10, 25, 10, 0, 0, TimeSpan.Zero),
             schemaVersionProvider: () => 24,
-            isReadyProvider: () => isReady);
+            isReadyProvider: () => isReady,
+            componentsProvider: () => new Dictionary<string, string>
+            {
+                ["database"] = "ready",
+                ["mobileApi"] = isReady ? "ready" : "unavailable"
+            });
 
         // Before ready
         var liveHealth = provider.GetLiveHealth();
@@ -319,21 +471,179 @@ public class ServerTests
         liveHealth.BuildId.Should().NotBeNullOrWhiteSpace();
         liveHealth.AssemblyVersion.Should().NotBeNullOrWhiteSpace();
         liveHealth.SchemaVersion.Should().Be(24);
-        liveHealth.DataDir.Should().Be(@"C:\Data\Server");
         liveHealth.Cloud.Should().Be("disabled");
         liveHealth.AutoScan.Should().Be("disabled");
 
         var readyBefore = provider.GetReadyHealth();
-        readyBefore.Status.Should().Be("Starting");
+        readyBefore.Status.Should().Be("NotReady");
+        readyBefore.Components.Should().NotBeNull();
+        readyBefore.Components!["database"].Should().Be("ready");
+        readyBefore.Components["mobileApi"].Should().Be("unavailable");
         provider.IsReady.Should().BeFalse();
 
         // After ready
         isReady = true;
         var readyAfter = provider.GetReadyHealth();
         readyAfter.Status.Should().Be("Ready");
+        readyAfter.Components!["mobileApi"].Should().Be("ready");
         provider.IsReady.Should().BeTrue();
         readyAfter.Cloud.Should().Be("disabled");
         readyAfter.AutoScan.Should().Be("disabled");
+    }
+
+    [Fact]
+    public async Task Readiness_WhenMobilePortOccupied_Returns503_WithComponentStatusUnavailable_AndLiveRemains200()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "lalab_port_conflict_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        int occupiedPort = GetAvailablePort();
+        int healthPort = GetAvailablePort();
+
+        // Occupy the port with a TcpListener
+        var occupyingListener = new TcpListener(IPAddress.Loopback, occupiedPort);
+        occupyingListener.Start();
+
+        Process? serverProcess = null;
+        try
+        {
+            string serverExe = FindServerExePath();
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = serverExe,
+                Arguments = $"--data-dir \"{tempDir}\" --port {occupiedPort} --health-port {healthPort}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            serverProcess = Process.Start(startInfo);
+            serverProcess.Should().NotBeNull();
+
+            using var httpClient = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{healthPort}") };
+
+            // Wait for health endpoint to become responsive
+            HttpResponseMessage? liveResp = null;
+            for (int i = 0; i < 20; i++)
+            {
+                try
+                {
+                    liveResp = await httpClient.GetAsync("/health/live");
+                    if (liveResp.IsSuccessStatusCode) break;
+                }
+                catch
+                {
+                    await Task.Delay(250);
+                }
+            }
+
+            liveResp.Should().NotBeNull("Server health endpoint must become responsive");
+            liveResp!.StatusCode.Should().Be(HttpStatusCode.OK);
+            string liveJson = await liveResp.Content.ReadAsStringAsync();
+            using var liveDoc = JsonDocument.Parse(liveJson);
+            liveDoc.RootElement.GetProperty("status").GetString().Should().Be("Live");
+
+            // GET /health/ready MUST return 503 because mobileApi failed to start
+            var readyResp = await httpClient.GetAsync("/health/ready");
+            readyResp.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+
+            string readyJson = await readyResp.Content.ReadAsStringAsync();
+            using var readyDoc = JsonDocument.Parse(readyJson);
+            var readyRoot = readyDoc.RootElement;
+            readyRoot.GetProperty("status").GetString().Should().Be("NotReady");
+
+            var components = readyRoot.GetProperty("components");
+            components.GetProperty("database").GetString().Should().Be("ready");
+            components.GetProperty("mobileApi").GetString().Should().Be("unavailable");
+        }
+        finally
+        {
+            occupyingListener.Stop();
+            if (serverProcess != null && !serverProcess.HasExited)
+            {
+                try { serverProcess.Kill(entireProcessTree: true); } catch { }
+            }
+            SqliteConnection.ClearAllPools();
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task HealthEndpoints_DoNotExposeAbsolutePaths_OrSecrets()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "lalab_health_privacy_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        int mobilePort = GetAvailablePort();
+        int healthPort = GetAvailablePort();
+
+        Process? serverProcess = null;
+        try
+        {
+            string serverExe = FindServerExePath();
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = serverExe,
+                Arguments = $"--data-dir \"{tempDir}\" --port {mobilePort} --health-port {healthPort}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            serverProcess = Process.Start(startInfo);
+            serverProcess.Should().NotBeNull();
+
+            using var httpClient = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{healthPort}") };
+
+            // Wait for health endpoint to become responsive
+            HttpResponseMessage? readyResp = null;
+            for (int i = 0; i < 20; i++)
+            {
+                try
+                {
+                    readyResp = await httpClient.GetAsync("/health/ready");
+                    if (readyResp.IsSuccessStatusCode) break;
+                }
+                catch
+                {
+                    await Task.Delay(250);
+                }
+            }
+
+            readyResp.Should().NotBeNull();
+            readyResp!.StatusCode.Should().Be(HttpStatusCode.OK);
+            string readyJson = await readyResp.Content.ReadAsStringAsync();
+
+            var liveResp = await httpClient.GetAsync("/health/live");
+            liveResp.StatusCode.Should().Be(HttpStatusCode.OK);
+            string liveJson = await liveResp.Content.ReadAsStringAsync();
+
+            string programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+
+            // Assert NO absolute paths or secrets in live or ready JSON
+            foreach (var json in new[] { liveJson, readyJson })
+            {
+                json.Should().NotContain("dataDir", "dataDir property must not be present in health responses per ADR D9");
+                json.Should().NotContain(tempDir, "Temporary or real dataDir path must not be leaked");
+                json.Should().NotContain(programData, "ProgramData path must not be leaked");
+                json.Should().NotMatchRegex(@"[A-Za-z]:\\", "Drive letters with absolute paths must not be present");
+                json.Should().NotContain(@"\\", "UNC network paths must not be present");
+                json.Should().NotContainEquivalentOf("pin");
+                json.Should().NotContainEquivalentOf("secret");
+                json.Should().NotContainEquivalentOf("token");
+            }
+        }
+        finally
+        {
+            if (serverProcess != null && !serverProcess.HasExited)
+            {
+                try { serverProcess.Kill(entireProcessTree: true); } catch { }
+            }
+            SqliteConnection.ClearAllPools();
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true); } catch { }
+        }
     }
 
     #endregion
@@ -384,6 +694,38 @@ public class ServerTests
             MigratorCalled = true;
             return Task.CompletedTask;
         }
+    }
+
+    private static int GetAvailablePort()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
+    }
+
+    private static string FindServerExePath()
+    {
+        string baseDir = AppContext.BaseDirectory;
+        string[] relativePaths = new[]
+        {
+            "LalabAutoReport.Server.exe",
+            @"..\..\..\..\src\LalabAutoReport.Server\bin\Debug\net8.0-windows\LalabAutoReport.Server.exe",
+            @"..\..\..\..\..\src\LalabAutoReport.Server\bin\Debug\net8.0-windows\LalabAutoReport.Server.exe",
+            @"..\..\..\src\LalabAutoReport.Server\bin\Debug\net8.0-windows\LalabAutoReport.Server.exe"
+        };
+
+        foreach (var rel in relativePaths)
+        {
+            string full = Path.GetFullPath(Path.Combine(baseDir, rel));
+            if (File.Exists(full))
+            {
+                return full;
+            }
+        }
+
+        throw new FileNotFoundException($"Không tìm thấy LalabAutoReport.Server.exe từ thư mục: {baseDir}");
     }
 
     #endregion

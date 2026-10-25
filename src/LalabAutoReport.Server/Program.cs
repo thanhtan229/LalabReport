@@ -38,6 +38,14 @@ public class Program
         }
 
         string dataDir = cliOptions.DataDir;
+
+        // Special handling for subcommand: inventory --dry-run
+        // MUST run BEFORE logging setup into dataDir, BEFORE ServerInstanceGuard, and BEFORE DB lifecycle/migration
+        if (cliOptions.IsInventoryDryRun)
+        {
+            return await ExecuteInventoryDryRunAsync(dataDir);
+        }
+
         string logDir = Path.Combine(dataDir, "logs");
 
         // 2. Initialize Serilog rolling file logger
@@ -96,24 +104,7 @@ public class Program
                 return 4;
             }
 
-            // 6. Check for subcommand: inventory --dry-run
-            if (cliOptions.IsInventoryDryRun)
-            {
-                Log.Information("Thực thi lệnh kiểm kê dry-run trên cơ sở dữ liệu: {DbPath}", connectionFactory.DatabasePath);
-                var inventoryService = new ServerInventoryService(connectionFactory.DatabasePath);
-                var report = await inventoryService.GenerateReportAsync();
-
-                string jsonOutput = JsonSerializer.Serialize(report, new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
-
-                Console.WriteLine(jsonOutput);
-                Log.Information("Hoàn tất kiểm kê inventory dry-run.");
-                return 0;
-            }
-
-            // 6.1 Check for subcommand: render-spike --bill-id <id> --out <dir>
+            // 6. Check for subcommand: render-spike --bill-id <id> --out <dir>
             if (cliOptions.IsRenderSpike)
             {
                 Log.Information("Thực thi render-spike cho Bill ID {BillId}, thư mục xuất: {OutDir}",
@@ -233,7 +224,8 @@ public class Program
             }
             else
             {
-                Log.Warning("Mobile Web Server không thể khởi động: {Error}", mobileServer.GetStatus().ErrorMessage);
+                Log.Error("Mobile Web Server không thể khởi động: {Error}. Sẽ báo NotReady trên /health/ready.",
+                    mobileServer.GetStatus().ErrorMessage ?? "Lỗi không xác định");
             }
 
             // 8. Health Info Provider setup
@@ -250,12 +242,29 @@ public class Program
                 }
             };
 
-            bool isReady = true; // DB migrated & lock held
+            Func<Dictionary<string, string>> componentsProvider = () =>
+            {
+                bool dbOk = guard.IsAcquired;
+                bool mobileOk = mobileServer.IsRunning;
+                return new Dictionary<string, string>
+                {
+                    ["database"] = dbOk ? "ready" : "unavailable",
+                    ["mobileApi"] = mobileOk ? "ready" : "unavailable"
+                };
+            };
+
+            Func<bool> isReadyProvider = () =>
+            {
+                bool dbOk = guard.IsAcquired;
+                bool mobileOk = mobileServer.IsRunning;
+                return dbOk && mobileOk;
+            };
+
             var healthProvider = new ServerHealthInfoProvider(
-                dataDir: dataDir,
                 startedAtUtc: DateTimeOffset.UtcNow,
                 schemaVersionProvider: schemaVersionProvider,
-                isReadyProvider: () => isReady && guard.IsAcquired);
+                isReadyProvider: isReadyProvider,
+                componentsProvider: componentsProvider);
 
             // 9. Start Loopback Health Endpoints with Minimal WebApplication
             var builder = WebApplication.CreateBuilder();
@@ -444,6 +453,95 @@ public class Program
         return true;
     }
 
+    private static async Task<int> ExecuteInventoryDryRunAsync(string dataDir)
+    {
+        string sourceDbPath = Path.Combine(dataDir, "lalab_autoreport.db");
+        if (!File.Exists(sourceDbPath))
+        {
+            Console.Error.WriteLine($"[LỖI INVENTORY] Không tìm thấy tập tin cơ sở dữ liệu tại '{sourceDbPath}'.");
+            return 7;
+        }
+
+        // Snapshot directory entries and source DB SHA-256 before dry-run
+        var dirInfo = new DirectoryInfo(dataDir);
+        var filesBefore = dirInfo.GetFiles().ToDictionary(f => f.Name, f => (f.Length, f.LastWriteTimeUtc));
+
+        string hashBefore;
+        using (var sha = SHA256.Create())
+        using (var stream = new FileStream(sourceDbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        {
+            hashBefore = Convert.ToHexString(sha.ComputeHash(stream)).ToLowerInvariant();
+        }
+
+        // Copy DB plus any sidecars (-wal, -shm) to a fresh temporary directory
+        string tempDir = Path.Combine(Path.GetTempPath(), "lalab_inv_snap_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            string tempDbPath = Path.Combine(tempDir, "lalab_autoreport.db");
+            File.Copy(sourceDbPath, tempDbPath, overwrite: true);
+
+            string sourceWal = sourceDbPath + "-wal";
+            if (File.Exists(sourceWal))
+            {
+                File.Copy(sourceWal, tempDbPath + "-wal", overwrite: true);
+            }
+
+            string sourceShm = sourceDbPath + "-shm";
+            if (File.Exists(sourceShm))
+            {
+                File.Copy(sourceShm, tempDbPath + "-shm", overwrite: true);
+            }
+
+            var inventoryService = new ServerInventoryService(tempDbPath);
+            var report = await inventoryService.GenerateReportAsync();
+
+            string jsonOutput = JsonSerializer.Serialize(report, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            Console.WriteLine(jsonOutput);
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            try
+            {
+                if (Directory.Exists(tempDir))
+                {
+                    Directory.Delete(tempDir, recursive: true);
+                }
+            }
+            catch { }
+        }
+
+        // Verify source DB file hash is unchanged
+        string hashAfter;
+        using (var sha = SHA256.Create())
+        using (var stream = new FileStream(sourceDbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+        {
+            hashAfter = Convert.ToHexString(sha.ComputeHash(stream)).ToLowerInvariant();
+        }
+
+        if (!string.Equals(hashBefore, hashAfter, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine("[LỖI INVENTORY] SHA-256 của tập tin cơ sở dữ liệu nguồn bị thay đổi sau khi chạy dry-run!");
+            return 1;
+        }
+
+        // Verify source directory files are unchanged
+        var filesAfter = dirInfo.GetFiles().ToDictionary(f => f.Name, f => (f.Length, f.LastWriteTimeUtc));
+        if (filesBefore.Count != filesAfter.Count || filesBefore.Any(kv => !filesAfter.ContainsKey(kv.Key) || filesAfter[kv.Key] != kv.Value))
+        {
+            Console.Error.WriteLine("[LỖI INVENTORY] Danh sách hoặc mtime tập tin trong thư mục nguồn bị thay đổi sau khi chạy dry-run!");
+            return 1;
+        }
+
+        return 0;
+    }
+
     private static void PrintUsage()
     {
         Console.WriteLine(@"
@@ -459,6 +557,15 @@ Tùy chọn:
   --health-port <port>  Cổng HTTP loopback cho health check (Mặc định: 5099)
   --bill-id <id>        ID hóa đơn cần xuất (dùng cho render-spike)
   --out <dir>           Thư mục đích lưu ảnh JPEG và nhãn in (dùng cho render-spike)
+
+Mã thoát (Exit Codes):
+  0: Thành công (Normal exit, Inventory dry-run, Render spike)
+  1: Lỗi không xử lý hoặc vi phạm toàn vẹn
+  2: Tham số dòng lệnh không hợp lệ
+  3: Không thể chiếm ServerInstanceGuard (tiến trình khác đang chạy)
+  4: Khởi tạo dữ liệu thất bại (Fail-closed lifecycle / backup failure)
+  6: Lỗi render-spike (không tìm thấy bill hoặc render lỗi)
+  7: Không tìm thấy cơ sở dữ liệu cho subcommand inventory --dry-run
 ");
     }
 
