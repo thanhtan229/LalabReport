@@ -658,7 +658,6 @@ public class CustomerBillingService : ICustomerBillingService
             throw new InvalidOperationException("Hóa đơn đã bị khóa, đã xuất hoặc đã thanh toán. Vui lòng mở khóa (Reopen) hoặc hủy thanh toán trước khi tách đơn.");
         }
 
-        var expectedUpdatedAt = currentBill.UpdatedAt;
         var ordersToMoveSet = new HashSet<long>(orderIdsToMove);
         var movingOrders = currentBill.Orders.Where(o => ordersToMoveSet.Contains(o.OrderId)).ToList();
 
@@ -800,7 +799,7 @@ public class CustomerBillingService : ICustomerBillingService
         currentBill.UpdatedAt = DateTimeOffset.UtcNow;
         RecalculateTotals(currentBill);
         await _customerBillRepository.SplitBillAtomicAsync(currentBill, newBill, orderIdsToMove,
-            expectedUpdatedAt, cancellationToken);
+            cancellationToken);
 
         _logger?.LogInformation(
             "Tách thành công {Count} đơn từ hóa đơn {OriginalBill} sang hóa đơn mới {NewBill} (ID {NewBillId}) cho khách hàng '{Customer}'.",

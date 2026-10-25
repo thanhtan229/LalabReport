@@ -235,6 +235,9 @@ public class Order
     public DateTimeOffset? DeliveredAt { get; set; }
     public string? DeliveredBy { get; set; }
     public string? Note { get; set; }
+    public long DeliveredRevision { get; set; } = 0;
+    public long PrintedRevision { get; set; } = 0;
+    public long NoteRevision { get; set; } = 0;
     public bool FilesystemChangedAfterLock { get; set; } = false;
     public string? Fingerprint { get; set; }
     public DateTimeOffset? LastScanAt { get; set; }
@@ -517,6 +520,7 @@ public class CustomerBill
     public bool HasPendingCloudChanges { get; set; }
     public bool IsPaid { get; set; } = false;
     public DateTimeOffset? PaidAt { get; set; }
+    public long Revision { get; set; } = 0;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 

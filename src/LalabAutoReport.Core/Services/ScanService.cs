@@ -622,7 +622,7 @@ public class ScanService : IScanService
         order.LastScanAt = DateTimeOffset.UtcNow;
         order.UpdatedAt = DateTimeOffset.UtcNow;
 
-        if (!order.IsPrinted && _printStatusService != null)
+        if (!order.IsPrinted && order.PrintedRevision == 0 && _printStatusService != null)
         {
             string fullOrderPath = _fileSystem.Combine(rootFolder, discOrder.RelativePath);
             if (await _printStatusService.IsFolderPrintedAsync(fullOrderPath, cancellationToken))

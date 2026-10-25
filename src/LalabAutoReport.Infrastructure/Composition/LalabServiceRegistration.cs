@@ -9,6 +9,7 @@ using LalabAutoReport.Infrastructure.Services;
 using LalabAutoReport.Infrastructure.Web;
 using LalabAutoReport.Infrastructure.Windows;
 using LalabAutoReport.ApplicationCore.Auth;
+using LalabAutoReport.ApplicationCore.Commands;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -96,6 +97,12 @@ public static class LalabServiceRegistration
         // Fingerprint & Search
         services.AddSingleton<IFolderFingerprintService, FolderFingerprintService>();
         services.AddSingleton<IGlobalSearchService, SqliteGlobalSearchService>();
+
+        // Operational Commands & Pipeline
+        services.AddSingleton<InFlightOperationRegistry>();
+        services.AddSingleton<IOrderOperationalCommandStore, SqliteOrderOperationalCommandStore>();
+        services.AddSingleton<IOperationLookupStore, SqliteCommandReceiptReader>();
+        services.AddSingleton<OrderOperationalCommandHandler>();
 
         // Auth & Mobile Web Server
         services.AddSingleton(TimeProvider.System);

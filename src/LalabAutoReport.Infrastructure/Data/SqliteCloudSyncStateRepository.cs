@@ -106,13 +106,13 @@ public sealed class SqliteCloudSyncStateRepository(ISqliteConnectionFactory fact
 
     // Called inside the same transaction as the local edit. No echo from remote
     // application: ApplyEventAsync writes operational columns directly.
-    internal static async Task EnqueueAsync(IDbConnection connection, IDbTransaction transaction, string type, long id, object value, string? actor = null)
+    internal static async Task EnqueueAsync(IDbConnection connection, IDbTransaction transaction, string type, long id, object value, string? actor = null, string? operationId = null)
     {
         var enabled = await connection.QuerySingleOrDefaultAsync<string>("SELECT value FROM app_settings WHERE key = 'EnableCloudSync'", transaction: transaction);
         if (!bool.TryParse(enabled, out bool on) || !on) return;
         await connection.ExecuteAsync(@"INSERT INTO cloud_operational_outbox(operation_id, entity_type, entity_id, value_json, delivered_by, created_at)
             VALUES (@OperationId, @type, @id, @ValueJson, @actor, @CreatedAt)",
-            new { OperationId = Guid.NewGuid().ToString("N"), type, id, ValueJson = JsonSerializer.Serialize(value), actor, CreatedAt = DateTimeOffset.UtcNow.ToString("o") }, transaction);
+            new { OperationId = operationId ?? Guid.NewGuid().ToString("N"), type, id, ValueJson = JsonSerializer.Serialize(value), actor, CreatedAt = DateTimeOffset.UtcNow.ToString("o") }, transaction);
     }
 
     public async Task<IReadOnlyList<CloudPendingOperation>> GetPendingAsync(CancellationToken cancellationToken = default)

@@ -598,7 +598,7 @@ public interface ICustomerBillRepository
     Task<IReadOnlyList<GuestBillSourceFolder>> GetSourceFoldersByBillIdAsync(long billId, CancellationToken cancellationToken = default);
     Task SaveBillAsync(CustomerBill bill, CancellationToken cancellationToken = default);
     Task SplitBillAtomicAsync(CustomerBill original, CustomerBill created, IReadOnlyList<long> movedOrderIds,
-        DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Repository must support transactional bill split.");
     Task LockCustomerBillAtomicAsync(CustomerBill bill, IReadOnlyList<long> productJobIds, IReadOnlyList<long> orderIds, CancellationToken cancellationToken = default);
     Task ReopenCustomerBillAtomicAsync(CustomerBill bill, IReadOnlyList<long> productJobIds, IReadOnlyList<long> orderIds, CancellationToken cancellationToken = default);

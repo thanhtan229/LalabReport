@@ -13,7 +13,7 @@ namespace LalabAutoReport.Infrastructure.Data;
 
 public class DatabaseMigrator : IDatabaseMigrator
 {
-    public const int LatestVersion = 26;
+    public const int LatestVersion = 29;
     private readonly ISqliteConnectionFactory _connectionFactory;
     private readonly IDatabaseBackupService? _backupService;
     private readonly ILogger<DatabaseMigrator>? _logger;
@@ -935,6 +935,121 @@ public class DatabaseMigrator : IDatabaseMigrator
                 CREATE UNIQUE INDEX IF NOT EXISTS ux_auth_sessions_token_hash ON auth_sessions(token_hash);
                 CREATE INDEX IF NOT EXISTS idx_auth_sessions_role_active ON auth_sessions(role, revoked_at_utc, expires_at_utc);
                 "
+            },
+            new MigrationDefinition
+            {
+                Version = 27,
+                Name = "AggregateRevisions",
+                Sql = "",
+                PostAction = MigrateAggregateRevisionsAsync
+            },
+            new MigrationDefinition
+            {
+                Version = 28,
+                Name = "CommandReceiptsAndAudit",
+                Sql = @"
+                CREATE TABLE IF NOT EXISTS command_receipts (
+                    operation_id      TEXT PRIMARY KEY,
+                    capability        TEXT NOT NULL,
+                    entity_type       TEXT NOT NULL,
+                    entity_id         INTEGER NOT NULL,
+                    payload_hash      TEXT NOT NULL,
+                    status            TEXT NOT NULL,
+                    result_json       TEXT NOT NULL,
+                    actor_kind        TEXT NOT NULL,
+                    actor_session_id  TEXT,
+                    actor_role        TEXT NOT NULL,
+                    created_at_utc    TEXT NOT NULL,
+                    completed_at_utc  TEXT NOT NULL
+                ) WITHOUT ROWID;
+                CREATE INDEX IF NOT EXISTS idx_command_receipts_entity  ON command_receipts(entity_type, entity_id);
+                CREATE INDEX IF NOT EXISTS idx_command_receipts_created ON command_receipts(created_at_utc);
+
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    occurred_at_utc   TEXT NOT NULL,
+                    action            TEXT NOT NULL,
+                    outcome           TEXT NOT NULL,
+                    operation_id      TEXT,
+                    entity_type       TEXT,
+                    entity_id         INTEGER,
+                    before_json       TEXT,
+                    after_json        TEXT,
+                    reason            TEXT,
+                    actor_kind        TEXT NOT NULL,
+                    actor_role        TEXT,
+                    actor_session_id  TEXT,
+                    actor_device_id   TEXT,
+                    actor_label       TEXT,
+                    client_ip         TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_audit_log_entity    ON audit_log(entity_type, entity_id, id);
+                CREATE INDEX IF NOT EXISTS idx_audit_log_operation ON audit_log(operation_id);
+                CREATE INDEX IF NOT EXISTS idx_audit_log_time      ON audit_log(occurred_at_utc);
+                "
+            },
+            new MigrationDefinition
+            {
+                Version = 29,
+                Name = "ChangeJournalAndRevisionTriggers",
+                Sql = @"
+                CREATE TABLE IF NOT EXISTS change_journal (
+                    seq                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                    database_generation INTEGER NOT NULL,
+                    entity_type         TEXT NOT NULL,
+                    entity_id           INTEGER NOT NULL,
+                    field_group         TEXT NOT NULL,
+                    revision            INTEGER NOT NULL,
+                    operation_id        TEXT,
+                    occurred_at_utc     TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_change_journal_entity ON change_journal(entity_type, entity_id, seq);
+
+                CREATE TRIGGER IF NOT EXISTS trg_orders_delivered_revision
+                AFTER UPDATE OF is_delivered, delivered_at, delivered_by ON orders
+                WHEN OLD.is_delivered IS NOT NEW.is_delivered
+                  OR OLD.delivered_at IS NOT NEW.delivered_at
+                  OR OLD.delivered_by IS NOT NEW.delivered_by
+BEGIN
+                    UPDATE orders SET delivered_revision = OLD.delivered_revision + 1 WHERE id = NEW.id;
+                    INSERT INTO change_journal(database_generation, entity_type, entity_id, field_group, revision, occurred_at_utc)
+                    VALUES (COALESCE((SELECT database_generation FROM server_identity WHERE id = 1), 1),
+                            'order', NEW.id, 'delivered', OLD.delivered_revision + 1, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+END;
+
+                CREATE TRIGGER IF NOT EXISTS trg_orders_printed_revision
+                AFTER UPDATE OF is_printed, printed_at, print_progress ON orders
+                WHEN OLD.is_printed IS NOT NEW.is_printed
+                  OR OLD.printed_at IS NOT NEW.printed_at
+                  OR OLD.print_progress IS NOT NEW.print_progress
+BEGIN
+                    UPDATE orders SET printed_revision = OLD.printed_revision + 1 WHERE id = NEW.id;
+                    INSERT INTO change_journal(database_generation, entity_type, entity_id, field_group, revision, occurred_at_utc)
+                    VALUES (COALESCE((SELECT database_generation FROM server_identity WHERE id = 1), 1),
+                            'order', NEW.id, 'printed', OLD.printed_revision + 1, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+END;
+
+                CREATE TRIGGER IF NOT EXISTS trg_orders_note_revision
+                AFTER UPDATE OF note ON orders
+                WHEN OLD.note IS NOT NEW.note
+BEGIN
+                    UPDATE orders SET note_revision = OLD.note_revision + 1 WHERE id = NEW.id;
+                    INSERT INTO change_journal(database_generation, entity_type, entity_id, field_group, revision, occurred_at_utc)
+                    VALUES (COALESCE((SELECT database_generation FROM server_identity WHERE id = 1), 1),
+                            'order', NEW.id, 'note', OLD.note_revision + 1, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+END;
+
+                CREATE TRIGGER IF NOT EXISTS trg_customer_bills_revision
+                AFTER UPDATE ON customer_bills
+                WHEN NEW.revision IS OLD.revision
+BEGIN
+                    UPDATE customer_bills SET revision = OLD.revision + 1 WHERE id = NEW.id;
+                    INSERT INTO change_journal(database_generation, entity_type, entity_id, field_group, revision, occurred_at_utc)
+                    VALUES (COALESCE((SELECT database_generation FROM server_identity WHERE id = 1), 1),
+                            'customer_bill', NEW.id, 'bill', OLD.revision + 1, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+END;
+                ",
+                PostAction = MigrateDatabaseGenerationAsync
             }
         };
     }
@@ -1295,6 +1410,50 @@ public class DatabaseMigrator : IDatabaseMigrator
                 WHERE (canonical_name LIKE '%Tranh Mica%' OR canonical_name LIKE '%Mica%')
                   AND family_id = (SELECT id FROM product_families WHERE name = 'Ảnh in');
             ", new { FamilyId = micaFamId }, transaction: transaction);
+        }
+    }
+
+    private static async Task MigrateAggregateRevisionsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        ILogger? logger)
+    {
+        var orderCols = (await connection.QueryAsync<TableColumnDto>(
+            "PRAGMA table_info(orders);", transaction: transaction)).ToList();
+
+        if (!orderCols.Any(c => string.Equals(c.name, "delivered_revision", StringComparison.OrdinalIgnoreCase)))
+        {
+            await connection.ExecuteAsync("ALTER TABLE orders ADD COLUMN delivered_revision INTEGER NOT NULL DEFAULT 0;", transaction: transaction);
+        }
+        if (!orderCols.Any(c => string.Equals(c.name, "printed_revision", StringComparison.OrdinalIgnoreCase)))
+        {
+            await connection.ExecuteAsync("ALTER TABLE orders ADD COLUMN printed_revision INTEGER NOT NULL DEFAULT 0;", transaction: transaction);
+        }
+        if (!orderCols.Any(c => string.Equals(c.name, "note_revision", StringComparison.OrdinalIgnoreCase)))
+        {
+            await connection.ExecuteAsync("ALTER TABLE orders ADD COLUMN note_revision INTEGER NOT NULL DEFAULT 0;", transaction: transaction);
+        }
+
+        var billCols = (await connection.QueryAsync<TableColumnDto>(
+            "PRAGMA table_info(customer_bills);", transaction: transaction)).ToList();
+
+        if (!billCols.Any(c => string.Equals(c.name, "revision", StringComparison.OrdinalIgnoreCase)))
+        {
+            await connection.ExecuteAsync("ALTER TABLE customer_bills ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;", transaction: transaction);
+        }
+    }
+
+    private static async Task MigrateDatabaseGenerationAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        ILogger? logger)
+    {
+        var cols = (await connection.QueryAsync<TableColumnDto>(
+            "PRAGMA table_info(server_identity);", transaction: transaction)).ToList();
+
+        if (!cols.Any(c => string.Equals(c.name, "database_generation", StringComparison.OrdinalIgnoreCase)))
+        {
+            await connection.ExecuteAsync("ALTER TABLE server_identity ADD COLUMN database_generation INTEGER NOT NULL DEFAULT 1;", transaction: transaction);
         }
     }
 

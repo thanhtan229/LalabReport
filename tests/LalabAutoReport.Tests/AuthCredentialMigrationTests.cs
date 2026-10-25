@@ -238,6 +238,6 @@ public class AuthCredentialMigrationTests : IDisposable
     [Fact]
     public void Migrator_LatestVersionEqualsMaxMigration()
     {
-        DatabaseMigrator.LatestVersion.Should().Be(26);
+        DatabaseMigrator.LatestVersion.Should().Be(29);
     }
 }

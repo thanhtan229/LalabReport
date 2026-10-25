@@ -9,5 +9,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/LalabAutoReport.Tests/LalabAutoReport.Tests.csproj" />
+    <Project Path="tests/LalabAutoReport.CrashHarness/LalabAutoReport.CrashHarness.csproj" />
   </Folder>
 </Solution>

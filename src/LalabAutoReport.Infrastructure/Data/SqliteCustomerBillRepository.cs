@@ -246,7 +246,7 @@ public class SqliteCustomerBillRepository : ICustomerBillRepository
     }
 
     public async Task SplitBillAtomicAsync(CustomerBill original, CustomerBill created,
-        IReadOnlyList<long> movedOrderIds, DateTimeOffset expectedUpdatedAt, CancellationToken cancellationToken = default)
+        IReadOnlyList<long> movedOrderIds, CancellationToken cancellationToken = default)
     {
         using var connection = _connectionFactory.CreateConnection();
         using var transaction = connection.BeginTransaction();
@@ -259,7 +259,7 @@ public class SqliteCustomerBillRepository : ICustomerBillRepository
                 throw new KeyNotFoundException($"Không tìm thấy hóa đơn ID {original.Id}.");
             if (stored.status != "Draft" || original.Status != CustomerBillStatus.Draft || created.Status != CustomerBillStatus.Draft || stored.is_paid == 1 || original.IsPaid)
                 throw new InvalidOperationException("Hãy mở lại hoặc hủy thanh toán hóa đơn trước khi tách đơn.");
-            if (DateTimeOffset.Parse(stored.updated_at) != expectedUpdatedAt || created.Id != 0)
+            if (stored.revision != original.Revision || created.Id != 0)
                 throw new InvalidOperationException("Hóa đơn đã thay đổi. Hãy tải lại trước khi tách đơn.");
             var currentIds = (await connection.QueryAsync<long>(
                 "SELECT order_id FROM customer_bill_orders WHERE bill_id=@Id", new { original.Id }, transaction)).ToHashSet();
@@ -295,13 +295,38 @@ public class SqliteCustomerBillRepository : ICustomerBillRepository
         {
             await SaveBillInternalAsync(connection, transaction, bill);
 
+            // (a) order-level claim guard: no included order already in ANOTHER Locked/Exported bill
+            if (orderIds.Count > 0)
+            {
+                int conflictingOrderCount = await connection.ExecuteScalarAsync<int>(@"
+                    SELECT COUNT(*) FROM customer_bill_orders cbo
+                    JOIN customer_bills cb ON cb.id = cbo.bill_id
+                    WHERE cbo.order_id IN @OrderIds AND cbo.is_included = 1
+                      AND cbo.bill_id <> @BillId AND cb.status IN ('Locked','Exported')
+                ", new { OrderIds = orderIds, BillId = bill.Id }, transaction: transaction);
+
+                if (conflictingOrderCount > 0)
+                {
+                    throw new BillClaimConflictException("Một hoặc nhiều đơn hàng đã được chốt trong hóa đơn khác.");
+                }
+            }
+
+            // (b) job-level claim guard: take over from NULL, self, or a Draft owner; never from Locked/Exported
             if (productJobIds.Count > 0)
             {
-                await connection.ExecuteAsync(@"
+                var distinctJobIds = productJobIds.Distinct().ToArray();
+                int affected = await connection.ExecuteAsync(@"
                     UPDATE order_item_scans
-                    SET customer_bill_id = @CustomerBillId
+                    SET customer_bill_id = @BillId
                     WHERE id IN @Ids
-                ", new { CustomerBillId = bill.Id, Ids = productJobIds }, transaction: transaction);
+                      AND (customer_bill_id IS NULL OR customer_bill_id = @BillId
+                           OR customer_bill_id IN (SELECT id FROM customer_bills WHERE status = 'Draft'))
+                ", new { BillId = bill.Id, Ids = distinctJobIds }, transaction: transaction);
+
+                if (affected != distinctJobIds.Length)
+                {
+                    throw new BillClaimConflictException("Một hoặc nhiều hạng mục in đã thuộc hóa đơn đã khóa/xuất khác.");
+                }
             }
 
             if (orderIds.Count > 0)
@@ -796,7 +821,7 @@ public class SqliteCustomerBillRepository : ICustomerBillRepository
     private static string SnapshotContent(CustomerBill bill)
     {
         var node = JsonSerializer.SerializeToNode(bill)!.AsObject();
-        foreach (var key in new[] { "Status", "LockedAt", "ExportedAt", "ExportFilePath", "IsPaid", "PaidAt", "CreatedAt", "UpdatedAt", "PriceTierSnapshot", "HasPendingCloudChanges" })
+        foreach (var key in new[] { "Status", "LockedAt", "ExportedAt", "ExportFilePath", "IsPaid", "PaidAt", "CreatedAt", "UpdatedAt", "PriceTierSnapshot", "HasPendingCloudChanges", "Revision" })
             node.Remove(key);
         void Strip(JsonNode? item)
         {
@@ -834,6 +859,7 @@ public class SqliteCustomerBillRepository : ICustomerBillRepository
         ExportedAt = !string.IsNullOrEmpty(dto.exported_at) ? DateTimeOffset.Parse(dto.exported_at) : null,
         IsPaid = dto.is_paid == 1,
         PaidAt = !string.IsNullOrEmpty(dto.paid_at) ? DateTimeOffset.Parse(dto.paid_at) : null,
+        Revision = dto.revision,
         CreatedAt = DateTimeOffset.Parse(dto.created_at),
         UpdatedAt = DateTimeOffset.Parse(dto.updated_at)
     };
@@ -927,6 +953,7 @@ public class SqliteCustomerBillRepository : ICustomerBillRepository
         public string? exported_at { get; set; }
         public long is_paid { get; set; }
         public string? paid_at { get; set; }
+        public long revision { get; set; }
         public string created_at { get; set; } = string.Empty;
         public string updated_at { get; set; } = string.Empty;
     }

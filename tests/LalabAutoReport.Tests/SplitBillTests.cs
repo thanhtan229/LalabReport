@@ -479,15 +479,16 @@ public class SplitBillTests : IDisposable
             Orders = new List<CustomerBillOrder> { new() { OrderId = bill.Orders[0].OrderId } }
         };
 
-        // 1. Stale timestamp rejection
-        var staleTimestamp = bill.UpdatedAt.AddMinutes(-10);
+        // 1. Stale revision rejection
+        originalCopy.Revision = bill.Revision + 1;
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            _customerBillRepo.SplitBillAtomicAsync(originalCopy, createdBill, new[] { movedOrderId }, staleTimestamp));
+            _customerBillRepo.SplitBillAtomicAsync(originalCopy, createdBill, new[] { movedOrderId }));
 
         // 2. Stale membership rejection (order not belonging to original bill)
+        originalCopy.Revision = bill.Revision;
         long foreignOrderId = 8888888L;
         createdBill.Orders[0].OrderId = foreignOrderId;
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            _customerBillRepo.SplitBillAtomicAsync(originalCopy, createdBill, new[] { foreignOrderId }, bill.UpdatedAt));
+            _customerBillRepo.SplitBillAtomicAsync(originalCopy, createdBill, new[] { foreignOrderId }));
     }
 }

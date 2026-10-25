@@ -271,8 +271,8 @@ public class SqliteOrderRepository : IOrderRepository
             }
 
             long orderId = await connection.QuerySingleAsync<long>(@"
-                INSERT INTO orders (order_code, work_date, customer_id, order_kind, order_name, original_folder_name, relative_path, status, is_printed, printed_at, print_progress, is_delivered, delivered_at, delivered_by, note, filesystem_changed_after_lock, fingerprint, last_scan_at, created_at, updated_at, root_folder_id, thumbnail_candidate_relative_path)
-                VALUES (@OrderCode, @WorkDate, @CustomerId, @OrderKind, @OrderName, @OriginalFolderName, @RelativePath, @Status, @IsPrinted, @PrintedAt, @PrintProgress, @IsDelivered, @DeliveredAt, @DeliveredBy, @Note, @FilesystemChangedAfterLock, @Fingerprint, @LastScanAt, @CreatedAt, @UpdatedAt, @RootFolderId, @ThumbnailCandidateRelativePath);
+                INSERT INTO orders (order_code, work_date, customer_id, order_kind, order_name, original_folder_name, relative_path, status, is_printed, printed_at, print_progress, is_delivered, delivered_at, delivered_by, note, filesystem_changed_after_lock, fingerprint, last_scan_at, created_at, updated_at, root_folder_id, thumbnail_candidate_relative_path, delivered_revision, printed_revision, note_revision)
+                VALUES (@OrderCode, @WorkDate, @CustomerId, @OrderKind, @OrderName, @OriginalFolderName, @RelativePath, @Status, @IsPrinted, @PrintedAt, @PrintProgress, @IsDelivered, @DeliveredAt, @DeliveredBy, @Note, @FilesystemChangedAfterLock, @Fingerprint, @LastScanAt, @CreatedAt, @UpdatedAt, @RootFolderId, @ThumbnailCandidateRelativePath, @DeliveredRevision, @PrintedRevision, @NoteRevision);
                 SELECT last_insert_rowid();
             ", new
             {
@@ -284,6 +284,10 @@ public class SqliteOrderRepository : IOrderRepository
                 OriginalFolderName = order.OriginalFolderName,
                 RelativePath = order.RelativePath,
                 Status = order.Status.ToString(),
+                DeliveredRevision = order.DeliveredRevision,
+                PrintedRevision = order.PrintedRevision,
+                NoteRevision = order.NoteRevision,
+                ObservedPrintedRevision = order.PrintedRevision,
                 IsPrinted = order.IsPrinted ? 1 : 0,
                 PrintedAt = order.PrintedAt?.ToString("o"),
                 PrintProgress = (int)order.PrintProgress,
@@ -311,9 +315,9 @@ public class SqliteOrderRepository : IOrderRepository
                     order_kind = @OrderKind,
                     order_name = @OrderName,
                     status = @Status,
-                    is_printed = @IsPrinted,
-                    printed_at = @PrintedAt,
-                    print_progress = @PrintProgress,
+                    is_printed = CASE WHEN printed_revision = @ObservedPrintedRevision THEN @IsPrinted ELSE is_printed END,
+                    printed_at = CASE WHEN printed_revision = @ObservedPrintedRevision THEN @PrintedAt ELSE printed_at END,
+                    print_progress = CASE WHEN printed_revision = @ObservedPrintedRevision THEN @PrintProgress ELSE print_progress END,
                     filesystem_changed_after_lock = @FilesystemChangedAfterLock,
                     fingerprint = @Fingerprint,
                     last_scan_at = @LastScanAt,
@@ -329,6 +333,7 @@ public class SqliteOrderRepository : IOrderRepository
                 OrderKind = order.OrderKind.ToString(),
                 OrderName = order.OrderName,
                 Status = order.Status.ToString(),
+                ObservedPrintedRevision = order.PrintedRevision,
                 IsPrinted = order.IsPrinted ? 1 : 0,
                 PrintedAt = order.PrintedAt?.ToString("o"),
                 PrintProgress = (int)order.PrintProgress,
@@ -784,6 +789,9 @@ public class SqliteOrderRepository : IOrderRepository
             DeliveredAt = !string.IsNullOrEmpty(dto.delivered_at) ? DateTimeOffset.Parse(dto.delivered_at) : null,
             DeliveredBy = dto.delivered_by,
             Note = dto.note,
+            DeliveredRevision = dto.delivered_revision,
+            PrintedRevision = dto.printed_revision,
+            NoteRevision = dto.note_revision,
             FilesystemChangedAfterLock = dto.filesystem_changed_after_lock == 1,
             Fingerprint = dto.fingerprint,
             LastScanAt = !string.IsNullOrEmpty(dto.last_scan_at) ? DateTimeOffset.Parse(dto.last_scan_at) : null,
@@ -883,6 +891,9 @@ public class SqliteOrderRepository : IOrderRepository
         public string? delivered_at { get; set; }
         public string? delivered_by { get; set; }
         public string? note { get; set; }
+        public long delivered_revision { get; set; }
+        public long printed_revision { get; set; }
+        public long note_revision { get; set; }
         public long filesystem_changed_after_lock { get; set; }
         public string? fingerprint { get; set; }
         public string? last_scan_at { get; set; }
