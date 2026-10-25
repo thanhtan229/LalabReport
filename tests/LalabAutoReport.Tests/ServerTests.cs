@@ -560,24 +560,8 @@ public class ServerTests
                     VALUES (1, 'BILL-01', 1, 'Khách 1', '2026-10-25', '2026-10-25', 'Locked', 100000, 0, '2026-10-25', '2026-10-25');
                 ");
 
-                // Drop grand_total column by recreating customer_bills without it
-                await conn.ExecuteAsync(@"
-                    CREATE TABLE customer_bills_broken (
-                        id INTEGER PRIMARY KEY,
-                        bill_number TEXT,
-                        customer_id INTEGER,
-                        customer_name_snapshot TEXT,
-                        period_start TEXT,
-                        period_end TEXT,
-                        status TEXT,
-                        created_at TEXT,
-                        updated_at TEXT
-                    );
-                    INSERT INTO customer_bills_broken (id, bill_number, customer_id, customer_name_snapshot, period_start, period_end, status, created_at, updated_at)
-                    SELECT id, bill_number, customer_id, customer_name_snapshot, period_start, period_end, status, created_at, updated_at FROM customer_bills;
-                    DROP TABLE customer_bills;
-                    ALTER TABLE customer_bills_broken RENAME TO customer_bills;
-                ");
+                // Drop grand_total column
+                await conn.ExecuteAsync("ALTER TABLE customer_bills DROP COLUMN grand_total;");
             }
             SqliteConnection.ClearAllPools();
 
@@ -602,6 +586,112 @@ public class ServerTests
             stdout.Trim().Should().BeEmpty("No JSON report must be emitted to stdout on exit 8");
             stderr.Should().Contain("INVENTORY");
             stderr.Should().Contain("grand_total");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task InventoryDryRun_WhenCustomerBillsTableDropped_OnV24_Exits8_AndOutputsNoJson()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "lalab_inv_cb_drop_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        string dbPath = Path.Combine(tempDir, "lalab_autoreport.db");
+
+        try
+        {
+            var factory = new SqliteConnectionFactory(dbPath);
+            var migrator = new DatabaseMigrator(factory);
+            await migrator.MigrateAsync();
+
+            using (var conn = new SqliteConnection($"Data Source={dbPath};Foreign Keys=False;"))
+            {
+                await conn.OpenAsync();
+                await conn.ExecuteAsync("INSERT INTO customers (id, canonical_name, created_at, updated_at) VALUES (1, 'Khách 1', '2026-10-25', '2026-10-25');");
+                // Insert legacy bills row as well to verify it does NOT fall back to legacy bills on modern V24 schema
+                await conn.ExecuteAsync("INSERT INTO bills (id, order_id, customer_id, status, subtotal, created_at, updated_at) VALUES (1, 1, 1, 'LOCKED', 100000, '2026-10-25', '2026-10-25');");
+
+                // Drop required V2 billing table
+                await conn.ExecuteAsync("DROP TABLE customer_bills;");
+            }
+            SqliteConnection.ClearAllPools();
+
+            string serverExe = FindServerExePath();
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = serverExe,
+                Arguments = $"inventory --dry-run --data-dir \"{tempDir}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(startInfo);
+            process.Should().NotBeNull();
+            string stdout = await process!.StandardOutput.ReadToEndAsync();
+            string stderr = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            process.ExitCode.Should().Be(8, $"Expected exit code 8 when dropping required customer_bills, got {process.ExitCode}. Stderr: {stderr}");
+            stdout.Trim().Should().BeEmpty("No JSON report must be emitted to stdout on exit 8");
+            stderr.Should().Contain("INVENTORY");
+            stderr.Should().Contain("customer_bills");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, recursive: true); } catch { }
+        }
+    }
+
+    [Theory]
+    [InlineData("customer_bills", "phone_snapshot")]
+    [InlineData("customer_bill_lines", "quantity_override_reason")]
+    public async Task InventoryDryRun_WhenRequiredColumnDropped_Exits8_AndOutputsNoJson(string tableName, string columnName)
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "lalab_inv_coldrop_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        string dbPath = Path.Combine(tempDir, "lalab_autoreport.db");
+
+        try
+        {
+            var factory = new SqliteConnectionFactory(dbPath);
+            var migrator = new DatabaseMigrator(factory);
+            await migrator.MigrateAsync();
+
+            using (var conn = factory.CreateConnection())
+            {
+                await conn.ExecuteAsync("INSERT INTO customers (id, canonical_name, created_at, updated_at) VALUES (1, 'Khách 1', '2026-10-25', '2026-10-25');");
+                // Drop required column
+                await conn.ExecuteAsync($"ALTER TABLE {tableName} DROP COLUMN {columnName};");
+            }
+            SqliteConnection.ClearAllPools();
+
+            string serverExe = FindServerExePath();
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = serverExe,
+                Arguments = $"inventory --dry-run --data-dir \"{tempDir}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(startInfo);
+            process.Should().NotBeNull();
+            string stdout = await process!.StandardOutput.ReadToEndAsync();
+            string stderr = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            process.ExitCode.Should().Be(8, $"Expected exit code 8 when dropping required column {columnName}, got {process.ExitCode}. Stderr: {stderr}");
+            stdout.Trim().Should().BeEmpty("No JSON report must be emitted to stdout on exit 8");
+            stderr.Should().Contain("INVENTORY");
+            stderr.Should().Contain(columnName);
         }
         finally
         {
@@ -704,57 +794,82 @@ public class ServerTests
             baselineHash.Should().NotBeNullOrWhiteSpace();
             reportBaseline2.LockedBillsSnapshotSha256.Should().Be(baselineHash, "Snapshot hash must be deterministic across consecutive runs");
 
-            // 2. Mutate customer_name_snapshot on locked bill -> Hash MUST change
+            // 2. Table-driven sensitivity tests across locked bill headers, lines, and adjustments
+            var mutationCases = new (string Name, string MutateSql, string RevertSql)[]
+            {
+                ("customer_name_snapshot", "UPDATE customer_bills SET customer_name_snapshot = 'Khách B' WHERE id = 1;", "UPDATE customer_bills SET customer_name_snapshot = 'Khách A' WHERE id = 1;"),
+                ("phone_snapshot", "UPDATE customer_bills SET phone_snapshot = '0901234567' WHERE id = 1;", "UPDATE customer_bills SET phone_snapshot = NULL WHERE id = 1;"),
+                ("shipping_address_snapshot", "UPDATE customer_bills SET shipping_address_snapshot = '123 Nguyen Hue' WHERE id = 1;", "UPDATE customer_bills SET shipping_address_snapshot = NULL WHERE id = 1;"),
+                ("export_file_path", "UPDATE customer_bills SET export_file_path = 'exports/bill1.xlsx' WHERE id = 1;", "UPDATE customer_bills SET export_file_path = NULL WHERE id = 1;"),
+                ("header note", "UPDATE customer_bills SET note = 'Altered Note' WHERE id = 1;", "UPDATE customer_bills SET note = 'Note 1' WHERE id = 1;"),
+                ("line billed_quantity", "UPDATE customer_bill_lines SET billed_quantity = 15 WHERE id = 1;", "UPDATE customer_bill_lines SET billed_quantity = 10 WHERE id = 1;"),
+                ("line quantity_override_reason", "UPDATE customer_bill_lines SET quantity_override_reason = 'Khách xin thêm' WHERE id = 1;", "UPDATE customer_bill_lines SET quantity_override_reason = NULL WHERE id = 1;"),
+                ("line price_override_reason", "UPDATE customer_bill_lines SET price_override_reason = 'Chiết khấu VIP' WHERE id = 1;", "UPDATE customer_bill_lines SET price_override_reason = NULL WHERE id = 1;"),
+                ("line final_print_folder_path", "UPDATE customer_bill_lines SET final_print_folder_path = 'retouch/leaf_final' WHERE id = 1;", "UPDATE customer_bill_lines SET final_print_folder_path = NULL WHERE id = 1;"),
+                ("line note", "UPDATE customer_bill_lines SET note = 'Line note altered' WHERE id = 1;", "UPDATE customer_bill_lines SET note = NULL WHERE id = 1;"),
+                ("adding adjustment", "INSERT INTO customer_bill_adjustments (id, bill_id, type, label, direction, amount, note, sort_order) VALUES (1, 1, 'Discount', 'Giảm giá', 'Subtract', 5000, 'Ghi chú phụ thu', 1);", "DELETE FROM customer_bill_adjustments WHERE id = 1;")
+            };
+
+            foreach (var (name, mutateSql, revertSql) in mutationCases)
+            {
+                using (var conn = factory.CreateConnection())
+                {
+                    await conn.ExecuteAsync(mutateSql);
+                }
+                SqliteConnection.ClearAllPools();
+                var mutReport = await service.GenerateReportAsync();
+                mutReport.LockedBillsSnapshotSha256.Should().NotBe(
+                    baselineHash,
+                    $"Altering {name} on locked bill must alter snapshot hash");
+
+                // Revert
+                using (var conn = factory.CreateConnection())
+                {
+                    await conn.ExecuteAsync(revertSql);
+                }
+                SqliteConnection.ClearAllPools();
+                var revReport = await service.GenerateReportAsync();
+                revReport.LockedBillsSnapshotSha256.Should().Be(
+                    baselineHash,
+                    $"Reverting {name} on locked bill must restore baseline snapshot hash");
+            }
+
+            // 3. Adjustment property mutations (direction, note)
             using (var conn = factory.CreateConnection())
             {
-                await conn.ExecuteAsync("UPDATE customer_bills SET customer_name_snapshot = 'Khách B' WHERE id = 1;");
+                await conn.ExecuteAsync("INSERT INTO customer_bill_adjustments (id, bill_id, type, label, direction, amount, note, sort_order) VALUES (1, 1, 'Discount', 'Giảm giá', 'Subtract', 5000, 'Ban đầu', 1);");
             }
             SqliteConnection.ClearAllPools();
-            var reportMutCustomer = await service.GenerateReportAsync();
-            reportMutCustomer.LockedBillsSnapshotSha256.Should().NotBe(baselineHash, "Changing customer_name_snapshot on locked bill must alter snapshot hash");
+            var adjBaselineReport = await service.GenerateReportAsync();
+            string adjBaselineHash = adjBaselineReport.LockedBillsSnapshotSha256;
+            adjBaselineHash.Should().NotBe(baselineHash);
 
-            // Revert customer_name_snapshot -> Hash must revert
+            // Mutate adjustment direction
             using (var conn = factory.CreateConnection())
             {
-                await conn.ExecuteAsync("UPDATE customer_bills SET customer_name_snapshot = 'Khách A' WHERE id = 1;");
+                await conn.ExecuteAsync("UPDATE customer_bill_adjustments SET direction = 'Add' WHERE id = 1;");
             }
             SqliteConnection.ClearAllPools();
-            var reportRevertedCustomer = await service.GenerateReportAsync();
-            reportRevertedCustomer.LockedBillsSnapshotSha256.Should().Be(baselineHash, "Reverting customer_name_snapshot must restore baseline hash");
+            var mutAdjDirReport = await service.GenerateReportAsync();
+            mutAdjDirReport.LockedBillsSnapshotSha256.Should().NotBe(adjBaselineHash, "Altering adjustment direction must alter snapshot hash");
 
-            // 3. Mutate locked line billed_quantity -> Hash MUST change
+            // Mutate adjustment note
             using (var conn = factory.CreateConnection())
             {
-                await conn.ExecuteAsync("UPDATE customer_bill_lines SET billed_quantity = 15 WHERE id = 1;");
+                await conn.ExecuteAsync("UPDATE customer_bill_adjustments SET direction = 'Subtract', note = 'Ghi chú mới' WHERE id = 1;");
             }
             SqliteConnection.ClearAllPools();
-            var reportMutLine = await service.GenerateReportAsync();
-            reportMutLine.LockedBillsSnapshotSha256.Should().NotBe(baselineHash, "Changing line quantity on locked bill must alter snapshot hash");
+            var mutAdjNoteReport = await service.GenerateReportAsync();
+            mutAdjNoteReport.LockedBillsSnapshotSha256.Should().NotBe(adjBaselineHash, "Altering adjustment note must alter snapshot hash");
 
-            // Revert line quantity
+            // Cleanup adjustment
             using (var conn = factory.CreateConnection())
             {
-                await conn.ExecuteAsync("UPDATE customer_bill_lines SET billed_quantity = 10 WHERE id = 1;");
+                await conn.ExecuteAsync("DELETE FROM customer_bill_adjustments WHERE id = 1;");
             }
             SqliteConnection.ClearAllPools();
 
-            // 4. Mutate locked_at, note, or bill_type -> Hash MUST change
-            using (var conn = factory.CreateConnection())
-            {
-                await conn.ExecuteAsync("UPDATE customer_bills SET note = 'Altered Note' WHERE id = 1;");
-            }
-            SqliteConnection.ClearAllPools();
-            var reportMutNote = await service.GenerateReportAsync();
-            reportMutNote.LockedBillsSnapshotSha256.Should().NotBe(baselineHash, "Changing note on locked bill must alter snapshot hash");
-
-            // Revert note
-            using (var conn = factory.CreateConnection())
-            {
-                await conn.ExecuteAsync("UPDATE customer_bills SET note = 'Note 1' WHERE id = 1;");
-            }
-            SqliteConnection.ClearAllPools();
-
-            // 5. Mutate an UNLOCKED (Draft) bill -> Hash MUST NOT change!
+            // 4. Mutate an UNLOCKED (Draft) bill -> Hash MUST NOT change!
             using (var conn = factory.CreateConnection())
             {
                 await conn.ExecuteAsync("UPDATE customer_bills SET grand_total = 999999, note = 'Draft modified' WHERE id = 2;");

@@ -38,8 +38,8 @@ public class ServerInventoryReport
     public long LockedBillsTotalAmountVnd { get; set; }
 
     /// <summary>
-    /// Canonical SHA-256 snapshot hash covering every locked bill header and all of its ordered snapshot lines.
-    /// Canonical format version: v1. See ServerInventoryService for specification.
+    /// Canonical SHA-256 snapshot hash covering every locked bill header and all of its ordered snapshot lines and adjustments.
+    /// Canonical format version: v2. See ServerInventoryService and docs/phase1-inventory-contract.md for specification.
     /// </summary>
     [JsonPropertyName("locked_bills_snapshot_sha256")]
     public string LockedBillsSnapshotSha256 { get; set; } = string.Empty;
@@ -154,7 +154,19 @@ public class ServerInventoryService
         using var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
 
-        // 1. Required Core & Catalog queries - Fail loudly if broken/missing
+        // 1. Verify schema_migrations table exists and fetch schema version
+        if (!await TableExistsAsync(connection, "schema_migrations"))
+        {
+            throw new InvalidOperationException("Lược đồ thiếu bảng bắt buộc: schema_migrations");
+        }
+
+        int schemaVersion = await connection.ExecuteScalarAsync<int>(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations;");
+
+        // 2. Validate strictly required tables and columns based on schema version (V23/V24)
+        await ValidateRequiredSchemaAsync(connection, schemaVersion);
+
+        // 3. Required Core & Catalog queries - Fail loudly if broken/missing
         int orders = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM orders;");
         int orderItems = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM order_item_scans;");
         int customers = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM customers;");
@@ -167,9 +179,8 @@ public class ServerInventoryService
         int specificAliases = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM product_specific_aliases;");
         int totalAliases = customerAliases + specAliases + familyAliases + specificAliases;
         int rootFolders = await connection.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM root_folders;");
-        int schemaVersion = await connection.ExecuteScalarAsync<int>("SELECT COALESCE(MAX(version), 0) FROM schema_migrations;");
 
-        // 2. Billing Queries - Fail loudly on required tables / columns
+        // 4. Billing Queries - Fail loudly on required tables / columns
         bool hasCustomerBills = await TableExistsAsync(connection, "customer_bills");
         bool hasLegacyBills = await TableExistsAsync(connection, "bills");
 
@@ -212,26 +223,31 @@ public class ServerInventoryService
         int totalLocked = v1LockedBills + v2LockedCustomerBills;
         long totalLockedAmount = v1LockedAmount + v2LockedAmount;
 
-        // 3. Documented Canonical Locked-Bill Snapshot Hash (Version: v1)
+        // 5. Documented Canonical Locked-Bill Snapshot Hash (Version: v2)
         /*
-         * CANONICAL SNAPSHOT HASH SPECIFICATION (v1):
+         * CANONICAL SNAPSHOT HASH SPECIFICATION (v2):
          * Input string is built with UTF-8 encoding and CultureInfo.InvariantCulture.
          * For each locked bill in customer_bills (status IN ('Locked', 'Exported') ORDER BY id ASC):
-         *   v1|bill:id={id}|bill_number={bill_number}|bill_type={bill_type}|customer_id={customer_id}|customer_name={customer_name_snapshot}|period_start={period_start}|period_end={period_end}|grand_total={grand_total}|product_subtotal={product_subtotal}|adjustments_total={adjustments_total}|is_paid={is_paid}|paid_at={paid_at}|locked_at={locked_at}|exported_at={exported_at}|note={note}\n
+         *   v2|bill:id={id}|bill_number={bill_number}|bill_type={bill_type}|customer_id={customer_id}|customer_name={customer_name_snapshot}|phone={phone_snapshot}|shipping_address={shipping_address_snapshot}|period_start={period_start}|period_end={period_end}|status={status}|grand_total={grand_total}|product_subtotal={product_subtotal}|adjustments_total={adjustments_total}|is_paid={is_paid}|paid_at={paid_at}|locked_at={locked_at}|exported_at={exported_at}|export_file_path={export_file_path}|note={note}\n
          *   For each line in customer_bill_lines for this bill (ORDER BY sort_order ASC, id ASC):
-         *     line:id={id}|order_id={order_id}|job_id={product_job_id}|spec_id={product_specification_id}|product={product_name_snapshot}|variant={variant_snapshot}|method={billing_method_snapshot}|scanned_qty={scanned_quantity}|billed_qty={billed_quantity}|sheets={sheet_count}|inc_sheets={included_sheets_snapshot}|extra_sheets={extra_sheet_count}|base_price={base_price_snapshot}|extra_price={extra_sheet_price_snapshot}|cfg_price={configured_unit_price}|billed_price={billed_unit_price}|total={line_total}|included={is_included}|sort={sort_order}|mode={folder_resolution_mode_snapshot}\n
+         *     line:id={id}|order_id={order_id}|job_id={product_job_id}|spec_id={product_specification_id}|product={product_name_snapshot}|variant={variant_snapshot}|method={billing_method_snapshot}|scanned_qty={scanned_quantity}|billed_qty={billed_quantity}|qty_override_reason={quantity_override_reason}|sheets={sheet_count}|inc_sheets={included_sheets_snapshot}|extra_sheets={extra_sheet_count}|base_price={base_price_snapshot}|extra_price={extra_sheet_price_snapshot}|cfg_price={configured_unit_price}|billed_price={billed_unit_price}|price_override_reason={price_override_reason}|total={line_total}|included={is_included}|sort={sort_order}|final_print_folder={final_print_folder_path}|mode={folder_resolution_mode_snapshot}|spec_folder={specification_folder_name}|issue={issue_message}|note={note}\n
          *   For each adjustment in customer_bill_adjustments for this bill (if table exists, ORDER BY sort_order ASC, id ASC):
          *     adj:id={id}|type={type}|label={label}|direction={direction}|amount={amount}|note={note}|sort={sort_order}\n
          * For each legacy locked bill in bills (UPPER(status) = 'LOCKED' ORDER BY id ASC):
-         *   v1|legacy_bill:id={id}|order_id={order_id}|customer_id={customer_id}|subtotal={subtotal}|locked_at={locked_at}\n
+         *   v2|legacy_bill:id={id}|order_id={order_id}|customer_id={customer_id}|subtotal={subtotal}|locked_at={locked_at}\n
          *   For each line in bill_lines (ORDER BY id ASC):
          *     legacy_line:id={id}|spec_id={print_specification_id}|source_count={source_count}|print_count={print_count}|bill_qty={bill_quantity}|mode={quantity_resolution_mode}|unit_price={unit_price}|total={line_total}\n
-         * If no locked bills exist, input string is: "v1|empty\n"
+         * If no locked bills exist, input string is: "v2|empty\n"
          * Hash is SHA-256 of the UTF-8 bytes, formatted as lowercase hex.
+         *
+         * INTENTIONAL EXCLUSIONS:
+         * - customer_bills.created_at, updated_at: purely operational database timestamps tracking row
+         *   creation/update times. They do not alter billing calculations, quantities, financial amounts,
+         *   provenance paths, or customer terms of the locked snapshot.
          */
         string lockedBillsSnapshotSha256 = await ComputeLockedBillsSnapshotHashAsync(connection, hasCustomerBills, hasLegacyBills);
 
-        // 4. Explicitly Optional Legacy Tables (cloud_*)
+        // 6. Explicitly Optional Legacy Tables (cloud_*)
         string? cloudEndpoint = null;
         string? cloudStreamId = null;
         long? cloudLastCursor = null;
@@ -303,6 +319,125 @@ public class ServerInventoryService
         return report;
     }
 
+    private static async Task ValidateRequiredSchemaAsync(SqliteConnection connection, int schemaVersion)
+    {
+        var existingTables = (await connection.QueryAsync<string>(
+            "SELECT name FROM sqlite_master WHERE type = 'table';")).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Core catalog & order tables strictly required for all schemas
+        var requiredCoreTables = new[]
+        {
+            "schema_migrations",
+            "orders",
+            "order_item_scans",
+            "customers",
+            "customer_aliases",
+            "print_specifications",
+            "print_specification_aliases",
+            "product_families",
+            "product_variants",
+            "product_family_aliases",
+            "product_specific_aliases",
+            "root_folders"
+        };
+
+        foreach (var table in requiredCoreTables)
+        {
+            if (!existingTables.Contains(table))
+            {
+                throw new InvalidOperationException($"Lược đồ thiếu bảng bắt buộc: {table}");
+            }
+        }
+
+        // For modern schemas (V23/V24) or any schema with customer_bills, V2 billing tables & columns are strictly required
+        if (schemaVersion >= 23 || existingTables.Contains("customer_bills"))
+        {
+            var requiredBillingTables = new[]
+            {
+                "customer_bills",
+                "customer_bill_lines",
+                "customer_bill_adjustments"
+            };
+
+            foreach (var table in requiredBillingTables)
+            {
+                if (!existingTables.Contains(table))
+                {
+                    throw new InvalidOperationException($"Lược đồ thiếu bảng bắt buộc: {table}");
+                }
+            }
+
+            // Required columns validation for customer_bills
+            var billColumns = (await connection.QueryAsync<string>("SELECT name FROM pragma_table_info('customer_bills');"))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var requiredBillColumns = new[]
+            {
+                "id", "bill_number", "bill_type", "customer_id", "customer_name_snapshot",
+                "phone_snapshot", "shipping_address_snapshot", "period_start", "period_end",
+                "status", "product_subtotal", "adjustments_total", "grand_total", "note",
+                "export_file_path", "locked_at", "exported_at", "is_paid", "paid_at"
+            };
+
+            foreach (var col in requiredBillColumns)
+            {
+                if (!billColumns.Contains(col))
+                {
+                    throw new InvalidOperationException($"Bảng 'customer_bills' thiếu cột bắt buộc: {col}");
+                }
+            }
+
+            // Required columns validation for customer_bill_lines
+            var lineColumns = (await connection.QueryAsync<string>("SELECT name FROM pragma_table_info('customer_bill_lines');"))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var requiredLineColumns = new[]
+            {
+                "id", "bill_id", "order_id", "product_job_id", "product_specification_id",
+                "product_name_snapshot", "variant_snapshot", "billing_method_snapshot",
+                "scanned_quantity", "billed_quantity", "quantity_override_reason",
+                "sheet_count", "included_sheets_snapshot", "extra_sheet_count",
+                "base_price_snapshot", "extra_sheet_price_snapshot",
+                "configured_unit_price", "billed_unit_price", "price_override_reason",
+                "line_total", "is_included", "sort_order", "final_print_folder_path",
+                "folder_resolution_mode_snapshot", "issue_message", "note", "specification_folder_name"
+            };
+
+            foreach (var col in requiredLineColumns)
+            {
+                if (!lineColumns.Contains(col))
+                {
+                    throw new InvalidOperationException($"Bảng 'customer_bill_lines' thiếu cột bắt buộc: {col}");
+                }
+            }
+
+            // Required columns validation for customer_bill_adjustments
+            var adjColumns = (await connection.QueryAsync<string>("SELECT name FROM pragma_table_info('customer_bill_adjustments');"))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var requiredAdjColumns = new[]
+            {
+                "id", "bill_id", "type", "label", "direction", "amount", "note", "sort_order"
+            };
+
+            foreach (var col in requiredAdjColumns)
+            {
+                if (!adjColumns.Contains(col))
+                {
+                    throw new InvalidOperationException($"Bảng 'customer_bill_adjustments' thiếu cột bắt buộc: {col}");
+                }
+            }
+        }
+        else
+        {
+            // Legacy schema without customer_bills must have legacy bills table
+            if (!existingTables.Contains("bills"))
+            {
+                throw new InvalidOperationException("Lược đồ thiếu cả customer_bills lẫn bills.");
+            }
+        }
+    }
+
     private static async Task<string> ComputeLockedBillsSnapshotHashAsync(
         SqliteConnection connection,
         bool hasCustomerBills,
@@ -314,11 +449,17 @@ public class ServerInventoryService
         if (hasCustomerBills)
         {
             bool hasBillType = await ColumnExistsAsync(connection, "customer_bills", "bill_type");
+            bool hasPhone = await ColumnExistsAsync(connection, "customer_bills", "phone_snapshot");
+            bool hasShipping = await ColumnExistsAsync(connection, "customer_bills", "shipping_address_snapshot");
+            bool hasExportPath = await ColumnExistsAsync(connection, "customer_bills", "export_file_path");
             bool hasIsPaid = await ColumnExistsAsync(connection, "customer_bills", "is_paid");
             bool hasPaidAt = await ColumnExistsAsync(connection, "customer_bills", "paid_at");
             bool hasAdjustments = await TableExistsAsync(connection, "customer_bill_adjustments");
 
             string billTypeExpr = hasBillType ? "COALESCE(bill_type, '')" : "''";
+            string phoneExpr = hasPhone ? "COALESCE(phone_snapshot, '')" : "''";
+            string shippingExpr = hasShipping ? "COALESCE(shipping_address_snapshot, '')" : "''";
+            string exportPathExpr = hasExportPath ? "COALESCE(export_file_path, '')" : "''";
             string isPaidExpr = hasIsPaid ? "is_paid" : "0";
             string paidAtExpr = hasPaidAt ? "COALESCE(paid_at, '')" : "''";
 
@@ -328,9 +469,12 @@ public class ServerInventoryService
                     bill_number,
                     {billTypeExpr} AS bill_type,
                     customer_id,
-                    customer_name_snapshot,
-                    period_start,
-                    period_end,
+                    COALESCE(customer_name_snapshot, '') AS customer_name_snapshot,
+                    {phoneExpr} AS phone_snapshot,
+                    {shippingExpr} AS shipping_address_snapshot,
+                    COALESCE(period_start, '') AS period_start,
+                    COALESCE(period_end, '') AS period_end,
+                    COALESCE(status, '') AS status,
                     grand_total,
                     product_subtotal,
                     adjustments_total,
@@ -338,6 +482,7 @@ public class ServerInventoryService
                     {paidAtExpr} AS paid_at,
                     COALESCE(locked_at, '') AS locked_at,
                     COALESCE(exported_at, '') AS exported_at,
+                    {exportPathExpr} AS export_file_path,
                     COALESCE(note, '') AS note
                 FROM customer_bills
                 WHERE status IN ('Locked', 'Exported')
@@ -349,17 +494,36 @@ public class ServerInventoryService
             {
                 hasAnyLockedBill = true;
 
+                bool hasQtyReason = await ColumnExistsAsync(connection, "customer_bill_lines", "quantity_override_reason");
+                bool hasPriceReason = await ColumnExistsAsync(connection, "customer_bill_lines", "price_override_reason");
+                bool hasFinalFolder = await ColumnExistsAsync(connection, "customer_bill_lines", "final_print_folder_path");
+                bool hasFolderMode = await ColumnExistsAsync(connection, "customer_bill_lines", "folder_resolution_mode_snapshot");
+                bool hasSpecFolder = await ColumnExistsAsync(connection, "customer_bill_lines", "specification_folder_name");
+                bool hasIssueMsg = await ColumnExistsAsync(connection, "customer_bill_lines", "issue_message");
+                bool hasLineNote = await ColumnExistsAsync(connection, "customer_bill_lines", "note");
+
+                string qtyReasonExpr = hasQtyReason ? "COALESCE(quantity_override_reason, '')" : "''";
+                string priceReasonExpr = hasPriceReason ? "COALESCE(price_override_reason, '')" : "''";
+                string finalFolderExpr = hasFinalFolder ? "COALESCE(final_print_folder_path, '')" : "''";
+                string folderModeExpr = hasFolderMode ? "COALESCE(folder_resolution_mode_snapshot, '')" : "''";
+                string specFolderExpr = hasSpecFolder ? "COALESCE(specification_folder_name, '')" : "''";
+                string issueMsgExpr = hasIssueMsg ? "COALESCE(issue_message, '')" : "''";
+                string lineNoteExpr = hasLineNote ? "COALESCE(note, '')" : "''";
+
                 foreach (var b in bills)
                 {
                     long billId = Convert.ToInt64(b.id);
-                    sb.Append("v1|bill:")
+                    sb.Append("v2|bill:")
                       .Append("id=").Append(b.id).Append('|')
                       .Append("bill_number=").Append((string)b.bill_number).Append('|')
                       .Append("bill_type=").Append((string)b.bill_type).Append('|')
                       .Append("customer_id=").Append(b.customer_id?.ToString() ?? "").Append('|')
                       .Append("customer_name=").Append((string)b.customer_name_snapshot).Append('|')
+                      .Append("phone=").Append((string)b.phone_snapshot).Append('|')
+                      .Append("shipping_address=").Append((string)b.shipping_address_snapshot).Append('|')
                       .Append("period_start=").Append((string)b.period_start).Append('|')
                       .Append("period_end=").Append((string)b.period_end).Append('|')
+                      .Append("status=").Append((string)b.status).Append('|')
                       .Append("grand_total=").Append(((long)b.grand_total).ToString(CultureInfo.InvariantCulture)).Append('|')
                       .Append("product_subtotal=").Append(((long)b.product_subtotal).ToString(CultureInfo.InvariantCulture)).Append('|')
                       .Append("adjustments_total=").Append(((long)b.adjustments_total).ToString(CultureInfo.InvariantCulture)).Append('|')
@@ -367,20 +531,22 @@ public class ServerInventoryService
                       .Append("paid_at=").Append((string)b.paid_at).Append('|')
                       .Append("locked_at=").Append((string)b.locked_at).Append('|')
                       .Append("exported_at=").Append((string)b.exported_at).Append('|')
+                      .Append("export_file_path=").Append((string)b.export_file_path).Append('|')
                       .Append("note=").Append((string)b.note).Append('\n');
 
                     // Lines
-                    string lineSql = @"
+                    string lineSql = $@"
                         SELECT 
                             id,
                             order_id,
                             product_job_id,
                             product_specification_id,
-                            product_name_snapshot,
+                            COALESCE(product_name_snapshot, '') AS product_name_snapshot,
                             COALESCE(variant_snapshot, '') AS variant_snapshot,
                             COALESCE(billing_method_snapshot, '') AS billing_method_snapshot,
                             scanned_quantity,
                             billed_quantity,
+                            {qtyReasonExpr} AS quantity_override_reason,
                             sheet_count,
                             included_sheets_snapshot,
                             extra_sheet_count,
@@ -388,10 +554,15 @@ public class ServerInventoryService
                             extra_sheet_price_snapshot,
                             configured_unit_price,
                             billed_unit_price,
+                            {priceReasonExpr} AS price_override_reason,
                             line_total,
                             is_included,
                             sort_order,
-                            COALESCE(folder_resolution_mode_snapshot, '') AS folder_resolution_mode_snapshot
+                            {finalFolderExpr} AS final_print_folder_path,
+                            {folderModeExpr} AS folder_resolution_mode_snapshot,
+                            {specFolderExpr} AS specification_folder_name,
+                            {issueMsgExpr} AS issue_message,
+                            {lineNoteExpr} AS note
                         FROM customer_bill_lines
                         WHERE bill_id = @BillId
                         ORDER BY sort_order ASC, id ASC;";
@@ -408,6 +579,7 @@ public class ServerInventoryService
                           .Append("method=").Append((string)l.billing_method_snapshot).Append('|')
                           .Append("scanned_qty=").Append(l.scanned_quantity).Append('|')
                           .Append("billed_qty=").Append(l.billed_quantity).Append('|')
+                          .Append("qty_override_reason=").Append((string)l.quantity_override_reason).Append('|')
                           .Append("sheets=").Append(l.sheet_count?.ToString() ?? "").Append('|')
                           .Append("inc_sheets=").Append(l.included_sheets_snapshot?.ToString() ?? "").Append('|')
                           .Append("extra_sheets=").Append(l.extra_sheet_count?.ToString() ?? "").Append('|')
@@ -415,10 +587,15 @@ public class ServerInventoryService
                           .Append("extra_price=").Append(l.extra_sheet_price_snapshot?.ToString() ?? "").Append('|')
                           .Append("cfg_price=").Append(((long)l.configured_unit_price).ToString(CultureInfo.InvariantCulture)).Append('|')
                           .Append("billed_price=").Append(((long)l.billed_unit_price).ToString(CultureInfo.InvariantCulture)).Append('|')
+                          .Append("price_override_reason=").Append((string)l.price_override_reason).Append('|')
                           .Append("total=").Append(((long)l.line_total).ToString(CultureInfo.InvariantCulture)).Append('|')
                           .Append("included=").Append(l.is_included).Append('|')
                           .Append("sort=").Append(l.sort_order).Append('|')
-                          .Append("mode=").Append((string)l.folder_resolution_mode_snapshot).Append('\n');
+                          .Append("final_print_folder=").Append((string)l.final_print_folder_path).Append('|')
+                          .Append("mode=").Append((string)l.folder_resolution_mode_snapshot).Append('|')
+                          .Append("spec_folder=").Append((string)l.specification_folder_name).Append('|')
+                          .Append("issue=").Append((string)l.issue_message).Append('|')
+                          .Append("note=").Append((string)l.note).Append('\n');
                     }
 
                     // Adjustments
@@ -473,7 +650,7 @@ public class ServerInventoryService
                 foreach (var lb in legacyBills)
                 {
                     long billId = Convert.ToInt64(lb.id);
-                    sb.Append("v1|legacy_bill:")
+                    sb.Append("v2|legacy_bill:")
                       .Append("id=").Append(lb.id).Append('|')
                       .Append("order_id=").Append(lb.order_id).Append('|')
                       .Append("customer_id=").Append(lb.customer_id).Append('|')
@@ -512,7 +689,7 @@ public class ServerInventoryService
 
         if (!hasAnyLockedBill)
         {
-            sb.Append("v1|empty\n");
+            sb.Append("v2|empty\n");
         }
 
         using var sha = SHA256.Create();
