@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.RegularExpressions;
 using FluentAssertions;
-using LalabAutoReport.UI.Web;
+using LalabAutoReport.Infrastructure.Web;
 using Xunit;
 
 namespace LalabAutoReport.Tests;

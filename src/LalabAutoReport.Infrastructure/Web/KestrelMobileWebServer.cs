@@ -16,7 +16,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace LalabAutoReport.UI.Web;
+namespace LalabAutoReport.Infrastructure.Web;
 
 public class KestrelMobileWebServer : IMobileWebServer, IDisposable
 {

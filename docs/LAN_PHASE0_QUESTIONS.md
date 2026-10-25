@@ -110,3 +110,22 @@ Các điểm sau **không** chặn Phase 1/2. LAN re-host giữ nguyên hành vi
 - `DataPurgeService` đặt `foreign_keys=OFF` bên trong transaction (`Infrastructure/Data/DataPurgeService.cs:94-159`).
 - Quick Bill từ thư mục ngoài root server: đợt đầu không hỗ trợ (plan §8.5). Không cần quyết định thêm.
 - TLS/chứng chỉ cho máy trạm: chặn Phase 3 (pairing), không chặn Phase 1/2. Phase 1 server dev chỉ nghe loopback.
+
+
+---
+
+## 9. Phê duyệt của PO (25/10/2026)
+
+PO đã duyệt tiếp tục Phase 1 theo đúng các **mặc định đề xuất** ở bảng đầu tài liệu (Q-B1 → Q-B7):
+
+| ID | Quyết định được áp dụng cho Phase 1 |
+|---|---|
+| Q-B1 | Chưa thêm vai trò Thu ngân. Admin máy trạm làm thu ngân; override/reopen/hủy thanh toán bắt buộc lý do. Schema capability vẫn được thiết kế để thêm sau. |
+| Q-B2 | Pilot 1 server + 2 máy trạm; thiết kế/load test cho 10 client; giả định < 500 đơn/ngày. |
+| Q-B3 | Root NTFS cục bộ trên máy chủ; service account `NT SERVICE\LalabServer`; NAS/SMB ngoài phạm vi đợt đầu. DB luôn cục bộ. |
+| Q-B4 | Một xưởng, một stream Cloud; service chạy trên chính máy hiện tại; Cloud tắt ở server profile Phase 1. |
+| Q-B5 | Giữ standalone đến hết pilot. |
+| Q-B6 | Giữ `net8.0-windows` cho Phase 1–2; nâng .NET 10 LTS trong batch riêng trước Phase 5. |
+| Q-B7 | Server profile tắt idle scan và startup scan. Đây là thay đổi hành vi, sẽ xác nhận lại với PO trước rollout Phase 6. |
+
+Phê duyệt này chỉ áp dụng cho Phase 1 (tách composition root, service host, re-host read-only, Cloud/AutoScan tắt). Các thay đổi hành vi nghiệp vụ ở Phase 2+ vẫn cần PO xác nhận riêng.

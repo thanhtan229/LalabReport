@@ -16,7 +16,8 @@ using LalabAutoReport.Infrastructure.Windows;
 using LalabAutoReport.Infrastructure.Services;
 using LalabAutoReport.UI.Services;
 using LalabAutoReport.UI.ViewModels;
-using LalabAutoReport.UI.Web;
+using LalabAutoReport.Infrastructure.Composition;
+using LalabAutoReport.Infrastructure.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 
@@ -530,69 +531,23 @@ public partial class App : Application
         // Logging
         services.AddLogging(builder => builder.AddSerilog(dispose: true));
 
-        // Core & Infrastructure Services
-        services.AddSingleton<IFileSystemAdapter, PhysicalFileSystemAdapter>();
-        if (_isolatedDataDirectory == null) services.AddSingleton<ISqliteConnectionFactory, SqliteConnectionFactory>();
-        else services.AddSingleton<ISqliteConnectionFactory>(new SqliteConnectionFactory(Path.Combine(_isolatedDataDirectory, "lalab_autoreport.db")));
-        services.AddSingleton<IDatabaseBackupService, DatabaseBackupService>();
-        services.AddSingleton<IDatabaseMigrator, DatabaseMigrator>();
-        services.AddSingleton<IDatabaseResetService, DatabaseResetService>();
-        services.AddSingleton<IDataPurgeService, DataPurgeService>();
-        services.AddSingleton<ISettingsRepository, SqliteSettingsRepository>();
-        services.AddSingleton<ICloudSyncStateRepository, SqliteCloudSyncStateRepository>();
-        services.AddSingleton<IRootFolderRepository, SqliteRootFolderRepository>();
-        services.AddSingleton<IOrderRepository, SqliteOrderRepository>();
-        services.AddSingleton<ICustomerRepository, SqliteCustomerRepository>();
-        services.AddSingleton<IFolderPrintRepository, SqliteFolderPrintRepository>();
-        services.AddSingleton<IFolderVisualMarkerService, FolderVisualMarkerService>();
-        services.AddSingleton<IPrintStatusService, PrintStatusService>();
-        services.AddSingleton<SqliteProductRepository>();
-        services.AddSingleton<IPrintSpecificationRepository>(sp => sp.GetRequiredService<SqliteProductRepository>());
-        services.AddSingleton<IProductRepository>(sp => sp.GetRequiredService<SqliteProductRepository>());
-        services.AddSingleton<IFolderStructureParser, FolderStructureParser>();
-        services.AddSingleton<IPrintFolderResolver, PrintFolderResolver>();
-        services.AddSingleton<ICustomerResolver, CustomerResolver>();
-        services.AddSingleton<PrintSpecificationResolver>();
-        services.AddSingleton<IPrintSpecificationResolver>(sp => sp.GetRequiredService<PrintSpecificationResolver>());
-        services.AddSingleton<IProductResolver>(sp => sp.GetRequiredService<PrintSpecificationResolver>());
-        services.AddSingleton<IScanService, ScanService>();
-        services.AddSingleton<IBillRepository, SqliteBillRepository>();
-        services.AddSingleton<IBillingService, BillingService>();
-        services.AddSingleton<ILockingService, LockingService>();
-        services.AddSingleton<ICustomerBillRepository, SqliteCustomerBillRepository>();
-        services.AddSingleton<ICustomerBillingService, CustomerBillingService>();
-        services.AddSingleton<IReportService, ReportService>();
-        services.AddSingleton<LalabAutoReport.Infrastructure.Reporting.WpfJpegBillExporter>();
-        services.AddSingleton<IJpegBillExporter>(sp => sp.GetRequiredService<LalabAutoReport.Infrastructure.Reporting.WpfJpegBillExporter>());
-        services.AddSingleton<LalabAutoReport.Infrastructure.Reporting.IBillVisualRenderer>(sp => sp.GetRequiredService<LalabAutoReport.Infrastructure.Reporting.WpfJpegBillExporter>());
-        services.AddSingleton<IExcelBillExporter, LalabAutoReport.Infrastructure.Reporting.ClosedXmlBillExporter>();
+        // Core & Infrastructure Services (Shared Composition Root)
+        services.AddLalabCore(options =>
+        {
+            if (_isolatedDataDirectory != null)
+            {
+                options.DataDirectory = _isolatedDataDirectory;
+                options.ThumbnailsDirectory = Path.Combine(_isolatedDataDirectory, "Thumbnails");
+            }
+        });
+
+        // Desktop / UI-only services
         services.AddSingleton<IContextMenuIntegrationService, WindowsContextMenuIntegrationService>();
         services.AddSingleton<QuickBillLauncher>();
-        services.AddSingleton<IFolderFingerprintService, FolderFingerprintService>();
         services.AddSingleton<IIdleDetectionService, WindowsIdleDetector>();
         services.AddSingleton<IAutoScanCoordinator, AutoScanCoordinator>();
         if (_isolatedDataDirectory == null) services.AddSingleton<IUpdateService, LalabAutoReport.Infrastructure.Services.GitHubUpdateService>();
-        services.AddSingleton<IGlobalSearchService, LalabAutoReport.Infrastructure.Services.SqliteGlobalSearchService>();
-        services.AddSingleton<IShippingLabelExporter, LalabAutoReport.Infrastructure.Reporting.WpfShippingLabelExporter>();
-        services.AddSingleton<IMobileAuthService, MobileAuthService>();
-        services.AddSingleton<IMobileWebServer, KestrelMobileWebServer>();
-        services.AddSingleton<IThumbnailCacheRepository, SqliteThumbnailCacheRepository>();
-        if (_isolatedDataDirectory == null)
-        {
-            services.AddSingleton<IThumbnailService, LalabAutoReport.Infrastructure.Services.ThumbnailService>();
-        }
-        else
-        {
-            services.AddSingleton<IThumbnailService>(sp => new ThumbnailService(
-                sp.GetRequiredService<IFileSystemAdapter>(),
-                Path.Combine(_isolatedDataDirectory, "Thumbnails"),
-                sp.GetService<IThumbnailCacheRepository>(),
-                sp.GetService<Microsoft.Extensions.Logging.ILogger<ThumbnailService>>()));
-        }
-        services.AddSingleton<IOrderGalleryService, OrderGalleryService>();
         services.AddSingleton<ISystemTrayManager, SystemTrayManager>();
-        services.AddSingleton<ICloudMediaSyncService, LalabAutoReport.Infrastructure.Services.CloudMediaSyncService>();
-        services.AddSingleton<ICloudSyncService, LalabAutoReport.Infrastructure.Services.CloudSyncService>();
 
         // ViewModels
         services.AddSingleton<DashboardViewModel>();

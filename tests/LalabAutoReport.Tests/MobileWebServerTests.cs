@@ -12,7 +12,7 @@ using FluentAssertions;
 using LalabAutoReport.Core.Domain;
 using LalabAutoReport.Core.Interfaces;
 using LalabAutoReport.Core.Services;
-using LalabAutoReport.UI.Web;
+using LalabAutoReport.Infrastructure.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 

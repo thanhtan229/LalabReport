@@ -1,4 +1,4 @@
-namespace LalabAutoReport.UI.Web;
+namespace LalabAutoReport.Infrastructure.Web;
 
 public static class MobileSpaHtmlProvider
 {
