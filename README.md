@@ -1,6 +1,6 @@
 # Lalab Auto Report
 
-Ứng dụng Windows Desktop (.NET 8 LTS, WPF, SQLite WAL) dành cho xưởng in ảnh chuyên nghiệp. Ứng dụng tự động hóa quy trình rà soát đơn hàng, đối soát số lượng file ảnh in, tính tiền và lập báo cáo tài chính/sản lượng từ cấu trúc thư mục thực tế của xưởng mà không can thiệp hay thay đổi file của khách hàng.
+Ứng dụng Windows Desktop (.NET 10 LTS, WPF, SQLite WAL) dành cho xưởng in ảnh chuyên nghiệp. Ứng dụng tự động hóa quy trình rà soát đơn hàng, đối soát số lượng file ảnh in, tính tiền và lập báo cáo tài chính/sản lượng từ cấu trúc thư mục thực tế của xưởng mà không can thiệp hay thay đổi file của khách hàng.
 
 ---
 
@@ -44,7 +44,7 @@ RootFolder/
 
 ---
 
-## 3. Kiến Trúc Ứng Dụng (.NET 8 Clean Architecture)
+## 3. Kiến Trúc Ứng Dụng (.NET 10 Clean Architecture)
 
 ```text
 src/
@@ -137,7 +137,7 @@ Dự án cung cấp sẵn các script Windows tiện lợi:
 
 ### Yêu Cầu Môi Trường
 - Windows 10/11 x64
-- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 
 ### Chạy Kiểm Thử Tự Động (Automated Tests)
 Toàn bộ 52 test cases (từ bộ nhận diện thư mục, giải quyết xung đột alias, tính giá, khóa đơn, báo cáo database-only, đến kiểm thử chịu lỗi và backup):
@@ -156,6 +156,6 @@ dotnet publish src/LalabAutoReport.UI/LalabAutoReport.UI.csproj -c Release -r wi
 
 File thực thi sau khi hoàn tất:
 ```text
-src/LalabAutoReport.UI/bin/Release/net8.0-windows/win-x64/publish/LalabAutoReport.UI.exe
+src/LalabAutoReport.UI/bin/Release/net10.0-windows/win-x64/publish/LalabAutoReport.UI.exe
 ```
 Người dùng chỉ cần copy file `LalabAutoReport.UI.exe` vào máy tính là có thể sử dụng ngay lập tức.

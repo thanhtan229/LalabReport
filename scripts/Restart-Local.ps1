@@ -1,7 +1,7 @@
 param([switch]$StopOnly)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
-$exe = [IO.Path]::GetFullPath((Join-Path $projectRoot 'src\LalabAutoReport.UI\bin\Debug\net8.0-windows\LalabAutoReport.UI.exe'))
+$exe = [IO.Path]::GetFullPath((Join-Path $projectRoot 'src\LalabAutoReport.UI\bin\Debug\net10.0-windows\LalabAutoReport.UI.exe'))
 $owned = @(Get-CimInstance Win32_Process -Filter "Name='LalabAutoReport.UI.exe'" | Where-Object { $_.ExecutablePath -eq $exe })
 foreach ($process in $owned) {
     Write-Output "Stopping owned application PID $($process.ProcessId): $($process.ExecutablePath)"

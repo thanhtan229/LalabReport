@@ -1,13 +1,13 @@
 # Script dang ky menu chuot phai QUICK BILL cho Lalab Auto Report
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ExePath = Join-Path $ScriptDir "src\LalabAutoReport.UI\bin\Debug\net8.0-windows\LalabAutoReport.UI.exe"
+$ExePath = Join-Path $ScriptDir "src\LalabAutoReport.UI\bin\Debug\net10.0-windows\LalabAutoReport.UI.exe"
 
 if (-not (Test-Path $ExePath)) {
-    $ExePath = Join-Path $ScriptDir "src\LalabAutoReport.UI\bin\Release\net8.0-windows\win-x64\publish\LalabAutoReport.UI.exe"
+    $ExePath = Join-Path $ScriptDir "src\LalabAutoReport.UI\bin\Release\net10.0-windows\win-x64\publish\LalabAutoReport.UI.exe"
 }
 
 if (-not (Test-Path $ExePath)) {
-    $ExePath = Join-Path $ScriptDir "src\LalabAutoReport.UI\bin\Release\net8.0-windows\LalabAutoReport.UI.exe"
+    $ExePath = Join-Path $ScriptDir "src\LalabAutoReport.UI\bin\Release\net10.0-windows\LalabAutoReport.UI.exe"
 }
 
 if (-not (Test-Path $ExePath)) {

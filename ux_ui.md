@@ -186,7 +186,7 @@ Product type:
 - Productivity
 - Data / Admin
 
-Primary platform: Windows Desktop (WPF, .NET 8)
+Primary platform: Windows Desktop (WPF, .NET 10)
 Secondary platform: None (Desktop only)
 
 Density:

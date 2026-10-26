@@ -27,7 +27,7 @@ if errorlevel 1 (
 
 :: 3. Verify Artifact
 echo [3/3] Kiem tra file thuc thi sau dong goi...
-set "EXE_PATH=src\LalabAutoReport.UI\bin\Release\net8.0-windows\win-x64\publish\LalabAutoReport.UI.exe"
+set "EXE_PATH=src\LalabAutoReport.UI\bin\Release\net10.0-windows\win-x64\publish\LalabAutoReport.UI.exe"
 
 if exist "%EXE_PATH%" (
     echo ===================================================

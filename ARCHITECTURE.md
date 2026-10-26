@@ -4,7 +4,7 @@
 >
 > Phiên bản: **2.0.0** (Nâng cấp từ V1)
 >
-> Nền tảng: **.NET 8.0 WPF (Windows Desktop, Local-First, SQLite)**
+> Nền tảng: **.NET 10.0 WPF (Windows Desktop, Local-First, SQLite)**
 
 ---
 

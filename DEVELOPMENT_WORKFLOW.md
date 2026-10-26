@@ -75,9 +75,9 @@ Project type:
 
 Primary platform: Windows (Windows 10 / Windows 11 x64)
 
-Frontend runtime: WPF (.NET 8.0-windows, XAML, CommunityToolkit.Mvvm)
-Backend runtime: In-process (.NET 8 LTS: LalabAutoReport.Core, LalabAutoReport.Infrastructure)
-Desktop/native runtime: WPF (.NET 8.0-windows)
+Frontend runtime: WPF (.NET 10.0-windows, XAML, CommunityToolkit.Mvvm)
+Backend runtime: In-process (.NET 10 LTS: LalabAutoReport.Core, LalabAutoReport.Infrastructure)
+Desktop/native runtime: WPF (.NET 10.0-windows)
 Database/runtime dependency: SQLite (WAL mode, Dapper, Microsoft.Data.Sqlite)
 
 Development start command: DEV_START.bat

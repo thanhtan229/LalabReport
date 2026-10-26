@@ -30,7 +30,7 @@ if errorlevel 1 (
 
 :: 2. Start Application
 echo [2/3] Dang khoi dong ung dung...
-set "EXE_PATH=%~dp0src\LalabAutoReport.UI\bin\Debug\net8.0-windows\LalabAutoReport.UI.exe"
+set "EXE_PATH=%~dp0src\LalabAutoReport.UI\bin\Debug\net10.0-windows\LalabAutoReport.UI.exe"
 if exist "%EXE_PATH%" (
     start "" "%EXE_PATH%"
 ) else (
