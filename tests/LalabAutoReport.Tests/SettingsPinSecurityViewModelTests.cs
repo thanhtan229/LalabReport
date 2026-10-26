@@ -37,6 +37,13 @@ public class SettingsPinSecurityViewModelTests
                 DateTimeOffset.MinValue));
         }
 
+        public Task<CredentialVerificationResult?> VerifyWithEpochAsync(string pin, CancellationToken cancellationToken = default)
+        {
+            if (AdminConfigured && pin == AdminPin) return Task.FromResult<CredentialVerificationResult?>(new CredentialVerificationResult("Admin", 1));
+            if (StaffConfigured && pin == StaffPin) return Task.FromResult<CredentialVerificationResult?>(new CredentialVerificationResult("Staff", 1));
+            return Task.FromResult<CredentialVerificationResult?>(null);
+        }
+
         public Task<string?> VerifyAsync(string pin, CancellationToken cancellationToken = default)
         {
             if (AdminConfigured && pin == AdminPin) return Task.FromResult<string?>("Admin");

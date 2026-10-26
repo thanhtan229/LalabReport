@@ -25,6 +25,7 @@ public class LalabServerCoreOptions
     public bool MobileWebServerReadOnlyMode { get; set; } = false;
     public IReadOnlySet<string>? MobileWebServerEnabledWriteCapabilities { get; set; }
     public int MobileWebServerPort { get; set; } = 0;
+    public ILoginPipelineObserver? LoginPipelineObserver { get; set; }
 }
 
 public static class LalabServiceRegistration
@@ -111,6 +112,14 @@ public static class LalabServiceRegistration
         services.AddSingleton<IAuditLogger, SqliteAuditLogger>();
         services.AddSingleton<IRoleCredentialStore, SqliteRoleCredentialStore>();
         services.AddSingleton<ISessionStore, SqliteSessionStore>();
+        if (options.LoginPipelineObserver != null)
+        {
+            services.AddSingleton<ILoginPipelineObserver>(options.LoginPipelineObserver);
+        }
+        else
+        {
+            services.AddSingleton<ILoginPipelineObserver>(NoOpLoginPipelineObserver.Instance);
+        }
         services.AddSingleton<ISessionService, SessionService>();
         services.AddSingleton<CredentialPlaintextScrubber>();
         var webServerOptions = new MobileWebServerOptions

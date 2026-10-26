@@ -8,6 +8,15 @@ namespace LalabAutoReport.ApplicationCore.Auth;
 
 public interface ISessionStore
 {
+    Task<(string? Token, SessionDto? Session)> CreateSessionAsync(
+        string role,
+        long expectedCredentialEpoch,
+        string clientKind,
+        string? deviceId = null,
+        string? deviceLabel = null,
+        string? issuedIp = null,
+        CancellationToken cancellationToken = default);
+
     Task<(string Token, SessionDto Session)> CreateSessionAsync(
         string role,
         string clientKind,

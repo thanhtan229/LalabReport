@@ -12,19 +12,22 @@ public sealed class SessionService : ISessionService
     private readonly LoginRateLimiter _rateLimiter;
     private readonly IAuditLogger? _auditLogger;
     private readonly ILogger<SessionService>? _logger;
+    private readonly ILoginPipelineObserver _pipelineObserver;
 
     public SessionService(
         IRoleCredentialStore credentialStore,
         ISessionStore sessionStore,
         LoginRateLimiter rateLimiter,
         IAuditLogger? auditLogger = null,
-        ILogger<SessionService>? logger = null)
+        ILogger<SessionService>? logger = null,
+        ILoginPipelineObserver? pipelineObserver = null)
     {
         _credentialStore = credentialStore ?? throw new ArgumentNullException(nameof(credentialStore));
         _sessionStore = sessionStore ?? throw new ArgumentNullException(nameof(sessionStore));
         _rateLimiter = rateLimiter ?? throw new ArgumentNullException(nameof(rateLimiter));
         _auditLogger = auditLogger;
         _logger = logger;
+        _pipelineObserver = pipelineObserver ?? NoOpLoginPipelineObserver.Instance;
     }
 
     public async Task<LoginResult> LoginAsync(
@@ -50,23 +53,34 @@ public sealed class SessionService : ISessionService
             return new LoginResult(LoginResultStatus.NotConfigured, ErrorMessage: "Chưa cấu hình mã PIN Admin trên ứng dụng Desktop. Vui lòng vào Cài đặt để thiết lập mã PIN.");
         }
 
-        string? role = await _credentialStore.VerifyAsync(pin, cancellationToken);
-        if (role == null)
+        var verification = await _credentialStore.VerifyWithEpochAsync(pin, cancellationToken);
+        if (verification == null)
         {
             _rateLimiter.RecordFailure(effectiveIp, deviceId);
             _logger?.LogWarning("Failed login attempt from IP {Ip}, device {DeviceId}", effectiveIp, deviceId);
             return new LoginResult(LoginResultStatus.InvalidCredentials, ErrorMessage: "Mã PIN không chính xác.");
         }
 
-        _rateLimiter.RecordSuccess(effectiveIp, deviceId);
+        // Test seam: fault hook / observer invoked after verification before atomic session creation
+        await _pipelineObserver.OnAfterVerifyBeforeCreateSessionAsync(verification.Role, verification.CredentialEpoch, cancellationToken);
 
         var (token, session) = await _sessionStore.CreateSessionAsync(
-            role,
+            verification.Role,
+            verification.CredentialEpoch,
             clientKind ?? "pwa",
             deviceId,
             deviceLabel,
             effectiveIp,
             cancellationToken);
+
+        if (token == null || session == null)
+        {
+            _rateLimiter.RecordFailure(effectiveIp, deviceId);
+            _logger?.LogWarning("Failed login attempt: credentials changed concurrently for role {Role} from IP {Ip}, device {DeviceId}", verification.Role, effectiveIp, deviceId);
+            return new LoginResult(LoginResultStatus.InvalidCredentials, ErrorMessage: "Mã PIN không chính xác hoặc thông tin đăng nhập đã thay đổi.");
+        }
+
+        _rateLimiter.RecordSuccess(effectiveIp, deviceId);
 
         if (_auditLogger != null)
         {
@@ -76,10 +90,10 @@ public sealed class SessionService : ISessionService
                     Action: "auth.login",
                     Outcome: "Succeeded",
                     ActorKind: "session",
-                    ActorRole: role,
+                    ActorRole: verification.Role,
                     ActorSessionId: session.SessionId,
                     ActorDeviceId: deviceId,
-                    ActorLabel: role == "Admin" ? "Chủ tiệm" : "Nhân viên",
+                    ActorLabel: verification.Role == "Admin" ? "Chủ tiệm" : "Nhân viên",
                     ClientIp: effectiveIp
                 ), cancellationToken);
             }
@@ -89,12 +103,12 @@ public sealed class SessionService : ISessionService
             }
         }
 
-        var caps = RoleCapabilityMap.GetCapabilities(role);
+        var caps = RoleCapabilityMap.GetCapabilities(verification.Role);
         return new LoginResult(
             Status: LoginResultStatus.Success,
             Token: token,
             SessionId: session.SessionId,
-            Role: role,
+            Role: verification.Role,
             Capabilities: caps,
             ExpiresAtUtc: session.ExpiresAtUtc);
     }

@@ -132,6 +132,12 @@ public class LoginRateLimiterTests
         public Task<RoleCredentialStatus> GetStatusAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(new RoleCredentialStatus(true, true, 1, 1, DateTimeOffset.UtcNow.AddDays(7)));
 
+        public Task<CredentialVerificationResult?> VerifyWithEpochAsync(string pin, CancellationToken cancellationToken = default)
+        {
+            VerifyCount++;
+            return Task.FromResult<CredentialVerificationResult?>(null);
+        }
+
         public Task<string?> VerifyAsync(string pin, CancellationToken cancellationToken = default)
         {
             VerifyCount++;
@@ -145,6 +151,10 @@ public class LoginRateLimiterTests
 
     private class DummySessionStore : ISessionStore
     {
+        public Task<(string? Token, SessionDto? Session)> CreateSessionAsync(
+            string role, long expectedCredentialEpoch, string clientKind, string? deviceId = null, string? deviceLabel = null, string? issuedIp = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult<(string?, SessionDto?)>(("dummy-token", new LalabAutoReport.Contracts.Auth.SessionDto("dummy-id", role, clientKind, deviceId, deviceLabel, issuedIp, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(30), null, null, null)));
+
         public Task<(string Token, SessionDto Session)> CreateSessionAsync(
             string role, string clientKind, string? deviceId = null, string? deviceLabel = null, string? issuedIp = null, CancellationToken cancellationToken = default) =>
             Task.FromResult(("dummy-token", new LalabAutoReport.Contracts.Auth.SessionDto("dummy-id", role, clientKind, deviceId, deviceLabel, issuedIp, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(30), null, null, null)));

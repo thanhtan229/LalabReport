@@ -26,8 +26,9 @@ public sealed class SqliteSessionStore : ISessionStore
         _logger = logger;
     }
 
-    public async Task<(string Token, SessionDto Session)> CreateSessionAsync(
+    public async Task<(string? Token, SessionDto? Session)> CreateSessionAsync(
         string role,
+        long expectedCredentialEpoch,
         string clientKind,
         string? deviceId = null,
         string? deviceLabel = null,
@@ -36,17 +37,10 @@ public sealed class SqliteSessionStore : ISessionStore
     {
         using var conn = _connectionFactory.CreateConnection();
 
-        // 1. Get current credential epoch for the role
-        long credentialEpoch = await conn.QuerySingleOrDefaultAsync<long>(@"
-            SELECT credential_epoch FROM auth_credentials WHERE role = @Role;
-        ", new { Role = role });
+        string normRole = string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase) ? "Admin"
+            : (string.Equals(role, "Staff", StringComparison.OrdinalIgnoreCase) ? "Staff" : role);
 
-        if (credentialEpoch <= 0)
-        {
-            credentialEpoch = 1;
-        }
-
-        // 2. Generate session ID and secret
+        // Generate session ID and secret
         string sessionId = Guid.NewGuid().ToString("N");
         byte[] secretBytes = new byte[32];
         RandomNumberGenerator.Fill(secretBytes);
@@ -61,22 +55,27 @@ public sealed class SqliteSessionStore : ISessionStore
         string nowIso = now.ToString("o");
         string expiresAtIso = expiresAt.ToString("o");
 
-        await conn.ExecuteAsync(@"
+        int affected = await conn.ExecuteAsync(@"
             INSERT INTO auth_sessions (
                 session_id, token_hash, role, credential_epoch, client_kind,
                 device_id, device_label, issued_ip, issued_at_utc, expires_at_utc,
                 last_seen_at_utc, revoked_at_utc, revoked_reason
-            ) VALUES (
-                @SessionId, @TokenHash, @Role, @CredentialEpoch, @ClientKind,
+            )
+            SELECT
+                @SessionId, @TokenHash, c.role, c.credential_epoch, @ClientKind,
                 @DeviceId, @DeviceLabel, @IssuedIp, @IssuedAtUtc, @ExpiresAtUtc,
                 @LastSeenAtUtc, NULL, NULL
-            );
+            FROM auth_credentials c
+            WHERE (c.role = @Role OR lower(c.role) = lower(@Role))
+              AND c.credential_epoch = @ExpectedCredentialEpoch
+              AND c.hash IS NOT NULL
+              AND length(c.hash) > 0;
         ", new
         {
             SessionId = sessionId,
             TokenHash = tokenHash,
-            Role = role,
-            CredentialEpoch = credentialEpoch,
+            Role = normRole,
+            ExpectedCredentialEpoch = expectedCredentialEpoch,
             ClientKind = clientKind ?? "pwa",
             DeviceId = deviceId,
             DeviceLabel = deviceLabel,
@@ -86,9 +85,16 @@ public sealed class SqliteSessionStore : ISessionStore
             LastSeenAtUtc = nowIso
         });
 
+        if (affected == 0)
+        {
+            _logger?.LogWarning("Failed to create session: credential epoch changed or PIN was cleared concurrently for role {Role} (expected epoch {ExpectedEpoch})",
+                normRole, expectedCredentialEpoch);
+            return (null, null);
+        }
+
         var sessionDto = new SessionDto(
             SessionId: sessionId,
-            Role: role,
+            Role: normRole,
             ClientKind: clientKind ?? "pwa",
             DeviceId: deviceId,
             DeviceLabel: deviceLabel,
@@ -100,6 +106,44 @@ public sealed class SqliteSessionStore : ISessionStore
             RevokedReason: null);
 
         return (token, sessionDto);
+    }
+
+    public async Task<(string Token, SessionDto Session)> CreateSessionAsync(
+        string role,
+        string clientKind,
+        string? deviceId = null,
+        string? deviceLabel = null,
+        string? issuedIp = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var conn = _connectionFactory.CreateConnection();
+        string normRole = string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase) ? "Admin"
+            : (string.Equals(role, "Staff", StringComparison.OrdinalIgnoreCase) ? "Staff" : role);
+
+        long credentialEpoch = await conn.QuerySingleOrDefaultAsync<long>(@"
+            SELECT credential_epoch FROM auth_credentials WHERE (role = @Role OR lower(role) = lower(@Role));
+        ", new { Role = normRole });
+
+        if (credentialEpoch <= 0)
+        {
+            credentialEpoch = 1;
+        }
+
+        var (token, session) = await CreateSessionAsync(
+            normRole,
+            credentialEpoch,
+            clientKind,
+            deviceId,
+            deviceLabel,
+            issuedIp,
+            cancellationToken);
+
+        if (token == null || session == null)
+        {
+            throw new InvalidOperationException($"Không thể tạo phiên đăng nhập cho vai trò {role}: thông tin xác thực không hợp lệ hoặc đã thay đổi.");
+        }
+
+        return (token, session);
     }
 
     public async Task<(bool Success, SessionDto? Session, string? FailureReason)> ValidateSessionAsync(

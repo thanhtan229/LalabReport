@@ -74,7 +74,7 @@ public sealed class SqliteRoleCredentialStore : IRoleCredentialStore
             legacyIssuedBefore);
     }
 
-    public async Task<string?> VerifyAsync(string pin, CancellationToken cancellationToken = default)
+    public async Task<CredentialVerificationResult?> VerifyWithEpochAsync(string pin, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(pin))
             return null;
@@ -111,12 +111,18 @@ public sealed class SqliteRoleCredentialStore : IRoleCredentialStore
             staffMatch = false;
         }
 
-        if (adminMatch)
-            return "Admin";
-        if (staffMatch)
-            return "Staff";
+        if (adminMatch && adminRow != null)
+            return new CredentialVerificationResult("Admin", adminRow.credential_epoch);
+        if (staffMatch && staffRow != null)
+            return new CredentialVerificationResult("Staff", staffRow.credential_epoch);
 
         return null;
+    }
+
+    public async Task<string?> VerifyAsync(string pin, CancellationToken cancellationToken = default)
+    {
+        var result = await VerifyWithEpochAsync(pin, cancellationToken);
+        return result?.Role;
     }
 
     public async Task SetPinAsync(string role, string newPin, ActorContext? actor = null, CancellationToken cancellationToken = default)
