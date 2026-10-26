@@ -21,6 +21,11 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Web\Assets\tailwind.js" LogicalName="LalabAutoReport.Infrastructure.Web.Assets.tailwind.js" />
+    <EmbeddedResource Include="Web\Assets\tailwind.LICENSE.txt" LogicalName="LalabAutoReport.Infrastructure.Web.Assets.tailwind.LICENSE.txt" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>

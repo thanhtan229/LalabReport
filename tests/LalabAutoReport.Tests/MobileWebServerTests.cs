@@ -114,6 +114,29 @@ public class MobileWebServerTests : IDisposable
         };
     }
 
+    [Fact]
+    public async Task Pwa_UsesLocalTailwindAsset_AndServesItWithoutInternet()
+    {
+        await _webServer.StartAsync();
+        try
+        {
+            var html = await _httpClient.GetStringAsync("/");
+            html.Should().NotContain("cdn.tailwindcss.com");
+            html.Should().Contain("/assets/tailwind.js");
+
+            var asset = await _httpClient.GetAsync("/assets/tailwind.js");
+            asset.StatusCode.Should().Be(HttpStatusCode.OK);
+            asset.Content.Headers.ContentType!.MediaType.Should().Be("text/javascript");
+            var assetText = await asset.Content.ReadAsStringAsync();
+            assetText.Should().Contain("tailwind");
+            assetText.Length.Should().BeGreaterThan(100_000);
+
+            var license = await _httpClient.GetAsync("/assets/tailwind.LICENSE.txt");
+            license.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally { await _webServer.StopAsync(); }
+    }
+
     [Theory]
     [InlineData("image", false)]
     [InlineData("label", false)]

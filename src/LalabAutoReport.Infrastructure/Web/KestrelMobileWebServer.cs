@@ -1327,6 +1327,25 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             await ctx.Response.WriteAsync("self.addEventListener('install', e => self.skipWaiting()); self.addEventListener('activate', e => e.waitUntil(clients.claim())); self.addEventListener('fetch', e => e.respondWith(fetch(e.request)));");
         });
 
+        // Local Tailwind runtime (vendored) so the LAN PWA works without internet.
+        app.MapGet("/assets/tailwind.js", (HttpContext ctx) =>
+        {
+            var stream = typeof(KestrelMobileWebServer).Assembly
+                .GetManifestResourceStream("LalabAutoReport.Infrastructure.Web.Assets.tailwind.js");
+            if (stream == null) return Results.NotFound();
+            ctx.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+            return Results.Stream(stream, "text/javascript; charset=utf-8");
+        });
+
+        app.MapGet("/assets/tailwind.LICENSE.txt", (HttpContext ctx) =>
+        {
+            var stream = typeof(KestrelMobileWebServer).Assembly
+                .GetManifestResourceStream("LalabAutoReport.Infrastructure.Web.Assets.tailwind.LICENSE.txt");
+            if (stream == null) return Results.NotFound();
+            ctx.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+            return Results.Stream(stream, "text/plain; charset=utf-8");
+        });
+
         // Api v1 endpoints (Phase 2 Auth)
         app.MapApiV1(_serviceProvider);
 

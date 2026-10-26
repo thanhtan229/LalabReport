@@ -29,6 +29,16 @@ namespace LalabAutoReport.Tests;
 public class MobileSpaScriptSyntaxTests
 {
     [Fact]
+    public void GetIndexHtml_UsesLocalTailwindAsset_NotCdn()
+    {
+        string html = MobileSpaHtmlProvider.GetIndexHtml();
+
+        html.Should().Contain("/assets/tailwind.js");
+        html.Should().NotContain("cdn.tailwindcss.com");
+        html.Should().NotContain("https://cdn.tailwindcss.com");
+    }
+
+    [Fact]
     public void GetIndexHtml_ContainsValidHtmlStructure()
     {
         string html = MobileSpaHtmlProvider.GetIndexHtml();

@@ -12,7 +12,7 @@ public static class MobileSpaHtmlProvider
   <title>Lalab Mobile</title>
   <link rel=""manifest"" href=""/manifest.json"">
   <meta name=""theme-color"" content=""#0f172a"">
-  <script src=""https://cdn.tailwindcss.com""></script>
+  <script src=""/assets/tailwind.js?v=176e8946""></script>
   <style>
     body { background-color: #0b0f17; color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
     .tab-active { color: #38bdf8; border-bottom: 2px solid #38bdf8; }
