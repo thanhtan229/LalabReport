@@ -108,3 +108,5 @@ Remaining known gaps: Session 0 Windows Service install/rendering NOT VERIFIED; 
 - **Cloud production**: worker `9226ad9a-9ef0-408e-aa4a-7c4c23ae6917` deployed; D1 migration `0008_bill_label_snapshots.sql` applied (3 cột bill snapshot còn thiếu do 0007 đã được apply bản cũ). Xem `docs/CLOUD_DEPLOY_20261027.md`; backup D1 `artifacts/cloud-d1-backup-20261027.sql` (local).
 - Verify: health 200; PWA gallery/label 200; gallery request 401; sync jobs 403; D1 đủ bảng gallery và cột bill; secrets giữ nguyên.
 - Lưu ý LAN PWA: Tailwind đã vendor local (commit `63d1e4b`), không phụ thuộc internet.
+
+- **Tailscale 2 xưởng**: runbook docs/TAILSCALE_TWO_WORKSHOPS.md; máy A 	iniwin01 100.81.149.85 đã verify HTTP PWA qua Tailscale; PC B + điện thoại làm theo runbook.
