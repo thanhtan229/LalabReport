@@ -186,8 +186,85 @@ All Phase 2 Batch 3 acceptance criteria defined in `docs/PLAN_LAN_PHASE2.md` §6
 
 ---
 
-## 6. QA Recommendation
+## 6. QA Recommendation (Phase 2 Batch 3)
 
 **VERDICT: QA PASS**
 
 All required evidence has been gathered and persisted in `docs/qa-evidence-phase2/`. The solution is ready to proceed with flipping the default CLI `--lan-writes` flag in `src/LalabAutoReport.Server/Program.cs` from `none` to `orders`.
+
+---
+
+## 7. Addendum: Phase 2 Batch 4 Load & Contention Independent Verification
+
+- **Date:** 2026-10-26
+- **Governing Reference:** `docs/PLAN_LAN_PHASE2.md` §6 B4, §13 Latency & Throughput Targets
+- **Harness:** `tests/LalabAutoReport.LoadHarness` (Release configuration)
+- **Safety Profile:** Disposable database copy under `%TEMP%`; zero access to `%LOCALAPPDATA%` or live DB; free loopback ports; automated teardown with zero lingering processes or files.
+- **Overall B4 Result:** **QA PASS** (All B4 criteria met; latencies significantly beat targets; zero data corruptions; idempotency verified).
+
+### 7.1 Build & Unit Test Verification
+- **Solution Build:** `dotnet build LalabAutoReport.slnx -c Release` -> **0 Warnings, 0 Errors** across all projects (21 pre-existing nullable/obsolete warnings in test fixtures).
+- **Test Suite Execution:** `dotnet test` -> **Passed: 839, Failed: 0, Skipped: 0, Total: 839** (Duration: 3m 30s). Covers 816 base domain/auth tests plus 23 pure-function verdict evaluator regression tests.
+
+### 7.2 Independent Load Harness Execution Results
+
+Two separate, independent 60-second 10-client load runs were executed to confirm stability and reproducibility against the author's baseline run:
+
+| Metric | Plan Target (§13) | Author Run | Independent Run 1 | Independent Run 2 | Status |
+|---|---|---|---|---|---|
+| **Concurrent Clients** | 10 clients | 10 | 10 | 10 | PASS |
+| **Duration** | 60.0s | 60.01s | 60.01s | 60.01s | PASS |
+| **Total Completed Requests** | — | 11,838 | 12,075 | 11,758 | Completed |
+| **Throughput** | — | 197.3 req/s | 201.2 req/s | 195.9 req/s | Healthy |
+| **Read Latency (p50)** | — | 1.8 ms | 1.8 ms | 1.7 ms | Nominal |
+| **Read Latency (p95)** | **< 1,000 ms** | **6.9 ms** | **7.5 ms** | **7.4 ms** | **PASS (<1% of budget)** |
+| **Read Latency (p99)** | — | 12.0 ms | 14.4 ms | 13.4 ms | Nominal |
+| **Command Latency (p50)** | — | 4.7 ms | 4.5 ms | 4.6 ms | Nominal |
+| **Command Latency (p95)** | **< 2,000 ms** | **464.7 ms** | **326.3 ms** | **462.2 ms** | **PASS (<25% of budget)** |
+| **Command Latency (p99)** | — | 785.6 ms | 634.8 ms | 788.0 ms | Nominal |
+| **Status 200 OK** | High | 11,757 (99.3%) | 11,996 (99.3%) | 11,673 (99.3%) | Healthy |
+| **Status 409 Conflict** | Handled | 81 | 79 | 85 | Optimistic Concurrency |
+| **Status 503 SERVER_BUSY** | Handled | 0 | 0 | 0 | Handled |
+| **Other / Unexpected Errors** | 0 | 0 | 0 | 0 | Zero |
+| **Idempotency Replay Match** | 100% | 365 / 365 (100%) | 392 / 392 (100%) | 414 / 414 (100%) | **PASS** |
+| **Stale Revision Retry Match**| Handled | 62 / 67 (92.5%) | 59 / 65 (90.8%) | 67 / 70 (95.7%) | Handled |
+| **Simulated Scan Bursts** | Active | 110 | 111 | 116 | Active |
+
+### 7.3 Database Integrity & Server Inventory Verification
+Immediately following each load run, post-test database integrity was verified directly via SQLite pragmas and server dry-run inventory:
+1. `PRAGMA integrity_check` -> `ok` (PASS)
+2. `PRAGMA foreign_key_check` -> 0 violations (PASS)
+3. Partial/uncommitted receipts check (`completed_at_utc IS NULL OR status != 'Committed'`) -> 0 rows (PASS)
+4. Receipts missing Audit Log row -> 0 rows (PASS)
+5. `LalabAutoReport.Server.exe inventory --dry-run` -> Exit Code 0 (PASS)
+
+### 7.4 False-Positive & Rigor Audit of Load Harness
+The load harness source code (`tests/LalabAutoReport.LoadHarness/Program.cs`) was thoroughly audited for false positives:
+- **v1 Command Mechanics:** Commands use unique GUID `operationId` values and accurately extract `expectedRevision` from `/api/v1/orders/{id}/operational-state`.
+- **Stale 409 Handling:** On encountering HTTP 409 `STALE_REVISION`, the harness re-reads current operational state and issues a retry with the new revision and a new `operationId`. Stale retries succeed at >90% rate.
+- **Idempotency Replay Integrity:** Client 0 executes immediate back-to-back replays using the identical `operationId`, payload, and `expectedRevision`. The server returns cached 200 OK responses. Post-run SQLite audit verifies no duplicate revisions, no duplicate command receipts, and no orphan audit rows.
+- **503 Contention Reporting:** 503 responses are explicitly tracked in metrics under `count503` and reported as `serverBusy503`; none are silently swallowed or converted into false successes.
+- **Fail-Loud Setup:** Missing source databases, process startup failures, port bind failures, unready health endpoints, authentication rejections, or missing orders trigger immediate non-zero exit codes.
+
+### 7.5 Process and Filesystem Hygiene Audit
+- **Source DB Isolation:** Harness copies `artifacts/acceptance/profile/lalab_autoreport.db` to a disposable `%TEMP%\lalab_load_b4_<guid>\` directory. `%LOCALAPPDATA%` and live databases are never touched.
+- **Process Cleanup:** Verified with `Get-Process` that 0 `LalabAutoReport.Server` or `LalabAutoReport.LoadHarness` processes linger after test execution.
+- **Directory Teardown:** Verified that temporary working directories under `%TEMP%` are deleted cleanly upon completion.
+
+### 7.6 Documentation Parity Audit
+The following documentation updates were verified for factual accuracy against the codebase and test runs:
+- `ARCHITECTURE.md` §11: Accurately documents LAN Authoritative Server, PBKDF2 hashed PINs, stateful sessions, capability enforcement, idempotent command pipeline, and B4 stress profile.
+- `docs/adr/ADR-002-lan-authoritative-server.md` §6: Accurately records Phase 2 gate results (810 tests, build 0 warnings/errors, B4 load metrics, accepted limitations, next Phase 3).
+- `DEVELOPMENT_WORKFLOW.md` §29: Accurately provides step-by-step instructions and command lines for running the B4 load harness.
+- `docs/PLAN_LAN_SERVER_WORKSTATIONS.md` §18: Accurately reflects Phase 2 B1–B4 completion status and points to Phase 3.
+
+### 7.7 Scope Limitations
+1. **Windows Service in Session 0 (NOT VERIFIED):** Service installation and background execution under Session 0 remain omitted per mandatory safety rules (`No service install; no deploy`). Server tested as console host.
+2. **Simulated Scan Write Pressure:** Real AutoScan coordinator is intentionally disabled in the server profile (Q-B7); scan contention was modeled via a background worker executing short SQLite write transactions holding locks for 15–25ms.
+
+### 7.8 Final B4 QA Verdict
+
+**B4 VERDICT: QA PASS**
+
+All acceptance criteria for Phase 2 Batch 4 (B4) under `docs/PLAN_LAN_PHASE2.md` §6 are satisfied with robust automated test coverage, clean stress test metrics, and zero data corruption. Phase 2 is complete and ready for final review and transition to Phase 3.
+

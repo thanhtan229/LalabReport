@@ -907,3 +907,94 @@ Prefer:
 `HMR → Reload UI → Restart affected service → Restart whole app → Package only when justified`
 
 Do not restart, rebuild, or package more of the project than necessary.
+
+---
+
+## 29. LAN Authoritative Server Workflow (Phase 2)
+
+### 29.1 Write Gate Mode (`--lan-writes`)
+`LalabAutoReport.Server.exe` controls LAN write availability via the `--lan-writes` command-line switch:
+- **`--lan-writes orders` (Default):** Kích hoạt các capability vận hành đơn hàng Phase 2: `orders.setDelivered`, `orders.setPrinted`, `orders.editNote`. Các thao tác tài chính, in ấn và bảo trì giữ trạng thái fail-closed trả về `503 WRITES_DISABLED_UNTIL_PHASE2`.
+- **`--lan-writes none` (Instant Rollback):** Ngay lập tức hoàn nguyên toàn bộ API ghi về chế độ Phase 1 chỉ đọc an toàn mà không cần thay đổi lược đồ database. Mọi lệnh ghi đều nhận `503 WRITES_DISABLED_UNTIL_PHASE2`.
+
+### 29.2 Chạy Server trên bản copy DB tạm (Isolated Temp DB)
+Để tránh ô nhiễm database môi trường thật hoặc `%ProgramData%`:
+```powershell
+# 1. Tạo thư mục tạm và copy dev database
+$tempDir = Join-Path $env:TEMP ("lalab_srv_dev_" + [Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $tempDir -Force
+Copy-Item "artifacts/acceptance/profile/lalab_autoreport.db" "$tempDir\lalab_autoreport.db"
+
+# 2. Khởi động Server với cổng loopback riêng biệt
+dotnet run --project src/LalabAutoReport.Server -- `
+    --data-dir "$tempDir" `
+    --port 5050 `
+    --health-port 5099 `
+    --lan-writes orders
+```
+
+### 29.3 Kiểm tra sức khỏe & Độ sẵn sàng (Health & Readiness)
+- **Liveness Probe:** `GET http://127.0.0.1:5099/health/live`
+  - Trả về `200 OK` ngay khi host ASP.NET Core đang chạy:
+    ```json
+    { "status": "Live", "buildId": "...", "startedAtUtc": "..." }
+    ```
+- **Readiness Probe:** `GET http://127.0.0.1:5099/health/ready`
+  - Đánh giá động: file lock `server.lock` đã chiếm, migration database đạt phiên bản mới nhất (`schema_migrations_max_version >= 29`), cheap DB query probe thành công, và Kestrel Mobile Server đang hoạt động.
+  - Trả về `200 OK` kèm danh sách components khi sẵn sàng phục vụ; trả về `503 Service Unavailable` khi đang khởi động hoặc gặp lỗi cơ sở dữ liệu.
+
+### 29.4 Quy trình kiểm thử khói B3 (B3 Manual/Scripted Smoke Procedure)
+Quy trình kiểm tra nhanh tính năng Phase 2 từ dòng lệnh:
+
+1. **Đăng nhập cấp phiên (Login):**
+   ```bash
+   curl -X POST http://127.0.0.1:5050/api/v1/auth/sessions \
+     -H "Content-Type: application/json" \
+     -d '{"pin":"888888","clientKind":"desktop"}'
+   # Kỳ vọng: 200 OK, trả về token, sessionId, role="Admin"
+   ```
+
+2. **Đọc trạng thái vận hành & Revision:**
+   ```bash
+   curl -X GET http://127.0.0.1:5050/api/v1/orders/1002/operational-state \
+     -H "Authorization: Bearer <TOKEN>" \
+     -H "X-Lalab-Client-Api: 1.0"
+   # Kỳ vọng: 200 OK, trả về object delivered, printed, note với revision hiện tại
+   ```
+
+3. **Gửi lệnh cập nhật có số hiệu revision (Commands):**
+   ```bash
+   # Giao hàng:
+   curl -X POST http://127.0.0.1:5050/api/v1/orders/1002/delivered \
+     -H "Authorization: Bearer <TOKEN>" -H "X-Lalab-Client-Api: 1.0" -H "Content-Type: application/json" \
+     -d '{"operationId":"a1b2c3d4e5f6478980123456789abcde","expectedRevision":0,"delivered":true}'
+   # Kỳ vọng: 200 OK, revision tăng lên 1
+
+   # Ghi chú:
+   curl -X POST http://127.0.0.1:5050/api/v1/orders/1002/note \
+     -H "Authorization: Bearer <TOKEN>" -H "X-Lalab-Client-Api: 1.0" -H "Content-Type: application/json" \
+     -d '{"operationId":"b2c3d4e5f6a1478980123456789abcde","expectedRevision":0,"note":"Smoke note test"}'
+   # Kỳ vọng: 200 OK, note_revision tăng lên 1
+   ```
+
+4. **Kiểm tra tính bất biến / phát lại cùng thao tác (Idempotent Replay):**
+   - Gửi lại chính xác lệnh ghi chú ở bước 3 (cùng `operationId`, cùng `expectedRevision`, cùng payload).
+   - Kỳ vọng: `200 OK`, trả về kết quả cũ đã commit, không tăng revision lần hai.
+
+5. **Kiểm tra phát hiện xung đột số hiệu (409 STALE_REVISION):**
+   - Gửi lệnh cập nhật ghi chú với `expectedRevision: 0` (trong khi revision thực tế trên server hiện tại đã là 1).
+   - Kỳ vọng: `409 Conflict`, mã lỗi `STALE_REVISION`, kèm `currentRevision: 1`.
+
+6. **Kiểm tra ranh giới cổng ghi (503 Service Unavailable):**
+   ```bash
+   curl -X POST http://127.0.0.1:5050/api/bills/1/toggle-payment -d ""
+   # Kỳ vọng: 503 Service Unavailable, mã lỗi WRITES_DISABLED_UNTIL_PHASE2
+   ```
+
+7. **Thu hồi toàn bộ phiên (Admin Revoke-All):**
+   ```bash
+   curl -X POST http://127.0.0.1:5050/api/v1/admin/sessions/revoke-all \
+     -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" -d '{}'
+   # Kỳ vọng: 200 OK. Thao tác tiếp theo bằng token cũ sẽ bị từ chối với 401 Unauthorized.
+   ```
+

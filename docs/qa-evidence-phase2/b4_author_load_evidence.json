@@ -1,0 +1,59 @@
+﻿{
+  "testRun": {
+    "timestampUtc": "2026-10-26T02:16:58.4968201\u002B00:00",
+    "durationSeconds": 60.0133195,
+    "concurrentClients": 10,
+    "totalRequests": 11838,
+    "throughputReqPerSec": 197.25621076501193,
+    "parallelScanBurstsExecuted": 110
+  },
+  "statusCounts": {
+    "ok200": 11757,
+    "staleRevision409": 81,
+    "serverBusy503": 0,
+    "otherErrors": 0
+  },
+  "latencies": {
+    "reads": {
+      "Count": 8891,
+      "Min": 0.2826,
+      "P50": 1.7724,
+      "P95": 6.8942,
+      "P99": 12.0152,
+      "Max": 38.7373,
+      "Avg": 2.600525508941624
+    },
+    "commands": {
+      "Count": 2947,
+      "Min": 0.4394,
+      "P50": 4.7037,
+      "P95": 464.6704,
+      "P99": 785.605,
+      "Max": 2188.132,
+      "Avg": 95.10359969460465
+    },
+    "overall": {
+      "Count": 11838,
+      "Min": 0.2826,
+      "P50": 2.324,
+      "P95": 158.697,
+      "P99": 467.9168,
+      "Max": 2188.132,
+      "Avg": 25.628618060483177
+    }
+  },
+  "idempotencyAndConcurrency": {
+    "totalReplays": 365,
+    "replaysSucceeded": 365,
+    "total409StaleRevisions": 67,
+    "staleRetriesSucceeded": 62
+  },
+  "databaseIntegrity": {
+    "passed": true,
+    "pragmaIntegrity": "ok",
+    "foreignKeyViolations": 0,
+    "partialReceipts": 0,
+    "inconsistentAudit": 0,
+    "inventoryDryRunPassed": true
+  }
+}

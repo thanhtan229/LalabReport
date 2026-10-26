@@ -1,0 +1,120 @@
+﻿{
+  "verdict": {
+    "passed": true,
+    "summary": "PASS",
+    "failureReasons": [],
+    "passedCriteria": [
+      "Reads executed: 9,059",
+      "Commands executed: 3,378",
+      "Replays attempted: 416",
+      "Gallery requests exercised: 3,260",
+      "Contention bursts executed: 118",
+      "Unexpected errors: 0",
+      "Replay match rate: 100% (416/416)",
+      "Duplicate revision bump effects: 0",
+      "Duplicate audit log effects: 0",
+      "Duplicate outbox effects: 0",
+      "False success entries: 0",
+      "Reads p95: 8.1ms (\u003C 1000ms target)",
+      "Commands p95: 323.3ms (\u003C 2000ms target)",
+      "Simulator/background exceptions: 0",
+      "PRAGMA integrity_check: ok",
+      "PRAGMA foreign_key_check: 0 violations",
+      "Incomplete / partial command receipts: 0",
+      "Receipts missing audit log rows: 0",
+      "Server inventory --dry-run: PASS (Exit 0)",
+      "Command reconciliation: 100% expected receipts, audits, and change journal effects verified."
+    ]
+  },
+  "serverBinary": {
+    "buildId": "2.0.0\u002Bebf61a36d7db5966cdffc68ecdb03eb657e00b81\u002Bebf61a36_20261026033537",
+    "gitSha": "ebf61a36d7db5966cdffc68ecdb03eb657e00b81",
+    "executablePath": "D:\\___TOOLS\\__TINIX\\LalabReport\\src\\LalabAutoReport.Server\\bin\\Release\\net8.0-windows\\LalabAutoReport.Server.exe"
+  },
+  "fixtureMode": {
+    "syntheticFixture": true,
+    "description": "Clean deterministic synthetic fixture (zero external DB dependency)"
+  },
+  "testRun": {
+    "timestampUtc": "2026-10-26T04:59:03.8975716\u002B00:00",
+    "durationSeconds": 60.0034373,
+    "concurrentClients": 10,
+    "totalRequests": 12437,
+    "throughputReqPerSec": 207.2714590968941,
+    "parallelScanBurstsExecuted": 118,
+    "galleryRequestsExercised": 3260
+  },
+  "statusCounts": {
+    "ok200": 12144,
+    "staleRevision409": 293,
+    "serverBusy503": 0,
+    "otherErrors": 0
+  },
+  "latencies": {
+    "reads": {
+      "Count": 9059,
+      "Min": 0.2673,
+      "P50": 2.0754,
+      "P95": 8.0545,
+      "P99": 13.9075,
+      "Max": 36.3622,
+      "Avg": 2.899589590462525
+    },
+    "commands": {
+      "Count": 3378,
+      "Min": 0.4064,
+      "P50": 3.6054,
+      "P95": 323.3029,
+      "P99": 630.775,
+      "Max": 952.8312,
+      "Avg": 78.51760621669641
+    },
+    "overall": {
+      "Count": 12437,
+      "Min": 0.2673,
+      "P50": 2.3682,
+      "P95": 161.5464,
+      "P99": 462.1504,
+      "Max": 952.8312,
+      "Avg": 23.43811657956104
+    }
+  },
+  "idempotencyAndConcurrency": {
+    "totalReplays": 416,
+    "replaysSucceeded": 416,
+    "replayMatchRatePercent": 100,
+    "duplicateRevisionEffects": 0,
+    "duplicateAuditEffects": 0,
+    "duplicateOutboxEffects": 0,
+    "falseSuccessCount": 0,
+    "total409StaleRevisions": 225,
+    "staleRetriesSucceeded": 190
+  },
+  "databaseIntegrity": {
+    "passed": true,
+    "pragmaIntegrity": "ok",
+    "foreignKeyViolations": 0,
+    "partialReceipts": 0,
+    "inconsistentAudit": 0,
+    "inventoryDryRunPassed": true
+  },
+  "reconciliation": {
+    "passed": true,
+    "expectedOperations": 2669,
+    "matchedReceipts": 2669,
+    "missingReceipts": 0,
+    "duplicateReceipts": 0,
+    "mismatchedReceipts": 0,
+    "missingAudits": 0,
+    "orphanAudits": 0,
+    "missingJournalEffects": 0,
+    "duplicateAudits": 0,
+    "duplicateJournals": 0,
+    "duplicateOutbox": 0,
+    "missingReceiptSampleIds": [],
+    "orphanAuditSampleIds": [],
+    "missingJournalSampleIds": [],
+    "mismatchedSampleIds": [],
+    "failureDetails": []
+  }
+}

@@ -394,12 +394,16 @@ Trạng thái của batch lập kế hoạch: chỉ thêm tài liệu này. Chư
 
 ---
 
-## 18. Phase 0 hoàn tất (25/10/2026)
+## 18. Trạng thái thực thi các Phase
 
-Tài liệu Phase 0 (read-only, chưa sửa code ứng dụng):
+- **Phase 0:** Hoàn tất (25/10/2026) — Tài liệu kiến trúc, inventory, câu hỏi (ADR-002, LAN_PHASE0_INVENTORY.md, LAN_PHASE0_QUESTIONS.md).
+- **Phase 1:** Hoàn tất (25/10/2026) — Shared DI, Server host, read-only loopback Kestrel API, renderer spike, single-instance lock.
+- **Phase 2:**
+  - **B1–B3 hoàn tất (Gate PASS):** Hashed PINs, stateful sessions, aggregate revisions, triggers, command pipeline, v1 order commands, --lan-writes orders default mode.
+  - **B4 hoàn tất (Evidence recorded):** Load harness 10 clients, 60s bounded run, parallel scan-shaped SQLite contention, zero partials, p95 reads 6.9 ms, p95 commands 464.7 ms (bằng chứng docs/qa-evidence-phase2/B4_LOAD_REPORT.md + JSON).
+- **Trạng thái hiện tại:** Phase 2 B1–B3 done / B4 evidence recorded. **Phase 3 tiếp theo** (Desktop Client Mode & LAN Pairing / Discovery).
 
-- `docs/adr/ADR-002-lan-authoritative-server.md`
-- `docs/LAN_PHASE0_INVENTORY.md`
-- `docs/LAN_PHASE0_QUESTIONS.md`
-
-Gallery đã được triển khai trước (commit `9f3bfba`) và được xử lý như application service hiện hữu sẽ re-host ở Phase 1, không viết lại. Phase 1 chỉ bắt đầu sau khi chốt các quyết định trong `LAN_PHASE0_QUESTIONS.md`.
+Tài liệu Phase 0 tham chiếu:
+- docs/adr/ADR-002-lan-authoritative-server.md
+- docs/LAN_PHASE0_INVENTORY.md
+- docs/LAN_PHASE0_QUESTIONS.md

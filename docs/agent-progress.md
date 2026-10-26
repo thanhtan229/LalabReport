@@ -85,3 +85,16 @@ Cập nhật: 25/10/2026. Bản ghi bàn giao ngắn; Git + test evidence là ng
 Phase 2 release-note behavior changes (acknowledged): PIN no longer viewable (empty = unchanged, explicit clear); PWA re-login once after upgrade; lock rejected if an included order is already in another locked/exported bill (double-bill fix); scan no longer resurrects an old printed marker after explicit un-print; notes limited to 4000 characters.
 
 Remaining known gaps: Session 0 Windows Service install/rendering NOT VERIFIED; desktop standalone still writes its own LocalAppData DB (Phase 3 client); desktop startup credential scrubber (B1-NB3) optional; legacy toggle adapters are intentionally not retry-safe; B4 load/10-client testing pending.
+
+
+---
+
+## Phase 2 final status (26/10/2026)
+
+- **B4 complete; Phase 2 milestone = FINAL PASS** (Final Reviewer, uncommitted B4 content; auth race commit `44a53d4`).
+- Commits: B1 `0f2a7b9`, B2 `5ec3e21`, B3+gate `209914c`, docs `ebf61a3`, auth-race fix `44a53d4`, B4 harness/docs commit (this batch).
+- Validation: solution build 0 warnings; **856 tests pass**; load harness 60s/10 clients (fresh fixture) PASS — 12,437 requests, reconciliation 2,669/2,669, reads p95 8.1 ms (<1 s), commands p95 323.3 ms (<2 s), 0 SQLITE_BUSY, integrity/FK/receipt/journal/audit OK. Fault injections (missing receipts, orphan audit, corrupted results) fail with nonzero exit.
+- Enabled writes: default `--lan-writes orders` (delivered/printed/note); payment/print/maintenance remain 503; rollback `--lan-writes none`.
+- Evidence: `docs/qa-evidence-phase2/` (QA + B4 load report/JSON/README).
+- Remaining limitations: Session 0 Windows Service install/rendering NOT VERIFIED; scan contention is simulated (real scan disabled in server profile per Q-B7); production-scale performance unproven; command receipt retention needs later maintenance; desktop standalone still writes its own LocalAppData DB (Phase 3 client); desktop startup credential scrubber optional.
+- Next: **Phase 3** — desktop HTTP client mode (no local business DB writer, session/conflict UX), device pairing/TLS/protected workstation credentials, reconnect/catch-up via change-journal cursors + database generation, operation lookup/retry safety; then Phase 4 billing/payment/print commands.

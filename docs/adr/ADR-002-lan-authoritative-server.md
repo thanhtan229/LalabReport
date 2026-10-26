@@ -256,3 +256,28 @@ Gate (plan §12, Phase 1):
 - Final Reviewer: **FINAL PASS** at `e229d5c` (0 blocking findings, 2 non-blocking contract deviations recorded in `docs/phase1-inventory-contract.md` §8).
 - Accepted limitations: Windows Service Session 0 execution/rendering not exercised; Cloud/AutoScan disabled in server profile; business writes return 503 `WRITES_DISABLED_UNTIL_PHASE2`; standalone desktop keeps its own LocalAppData DB until the Phase 3 client.
 - Phase 2 must address first: revocable sessions/capabilities with hashed PINs; desired-state commands with revisions and idempotency receipts; shared mutation handlers with atomic bill-job claims, audit/outbox and concurrency tests before enabling writes.
+
+---
+
+## 6. Phase 2 gate result (26/10/2026)
+
+- Code: commits `0f2a7b9` (hashed PINs, revocable sessions, capability auth), `5ec3e21` (revisions, command receipts, idempotent order pipeline), `209914c` (v1 order commands, legacy adapters, order writes gate), `ebf61a3` (record B2/B3 gate PASS and enabled order writes).
+- Validation: **810 automated tests passed**; builds 0 warnings/0 errors.
+- Independent QA: **PASS** (evidence in `docs/qa-evidence-phase2/`).
+- Code Reviewer: **LGTM** across all Phase 2 batches (`B1` through `B4`).
+- Default write mode: `LalabAutoReport.Server --lan-writes` now defaults to `orders` (enabling `orders.setDelivered`, `orders.setPrinted`, `orders.editNote`).
+- Instant rollback: `--lan-writes none` immediately restores Phase 1 read-only surface without schema rollback.
+- B4 Load & Contention Evidence: 10 concurrent clients, 60s bounded run with parallel scan-shaped SQLite contention:
+  - Total requests: 11,838 completed (197.3 req/s throughput); 0 fatal errors.
+  - Read latency: p50 = 1.8 ms, p95 = 6.9 ms (target < 1,000 ms).
+  - State command latency: p50 = 4.7 ms, p95 = 464.7 ms (target < 2,000 ms).
+  - 100% idempotency replay success (365/365 identical responses with zero duplicate effects).
+  - Optimistic concurrency conflicts (409 STALE_REVISION) cleanly handled with re-read and retry.
+  - Database integrity: `PRAGMA integrity_check = ok`, 0 FK violations, 0 partial/uncommitted receipts, 0 inconsistent audit entries, Server `inventory --dry-run` PASS.
+  - Detailed report: [`docs/qa-evidence-phase2/B4_LOAD_REPORT.md`](../qa-evidence-phase2/B4_LOAD_REPORT.md).
+- Accepted limitations:
+  - Standalone desktop ViewModel writers remain last-write-wins until Phase 3 client facade (they participate via DB triggers causing 409 on stale LAN clients).
+  - Payment toggle (`/api/bills/{id}/toggle-payment`), server bill print, and thumbnail maintenance return `503 WRITES_DISABLED_UNTIL_PHASE2` until Phase 4/5.
+  - Windows Service Session 0 execution/rendering remains unverified on live service.
+  - Offline brute-force risk of low-entropy PIN hashes is documented and mitigated primarily by OS database ACL.
+- Next Phase: Phase 3 (Desktop Client Mode & LAN Pairing / Discovery).

@@ -365,4 +365,77 @@ Nhằm hỗ trợ ứng dụng Mobile PWA quản lý trạng thái thanh toán, 
 - Cập nhật thời gian đồng bộ `LastCloudSyncAt` được thực hiện qua phương thức riêng biệt (`SetLastSyncAtAsync`), ghi trực tiếp trường đơn lẻ vào cơ sở dữ liệu.
 - Tuyệt đối không serialize ghi đè toàn bộ đối tượng `AppSettings` làm mất các thay đổi cấu hình khác của người dùng diễn ra đồng thời.
 
+---
+
+## 11. Kiến Trúc Máy Chủ LAN Có Thẩm Quyền & Đột Biến Đồng Thời Phase 2 (LAN Authoritative Server & Phase 2 Concurrency)
+
+> Tham chiếu chi tiết: [ADR 002 — Máy Chủ LAN Có Thẩm Quyền](docs/adr/ADR-002-lan-authoritative-server.md), [docs/PLAN_LAN_PHASE2.md](docs/PLAN_LAN_PHASE2.md), [docs/qa-evidence-phase2/B4_LOAD_REPORT.md](docs/qa-evidence-phase2/B4_LOAD_REPORT.md).
+
+Nhằm chuyển đổi mô hình từ ứng dụng Desktop đơn lẻ sang kiến trúc Client-Server nội bộ (LAN Authoritative Server) hỗ trợ đa thiết bị (Máy trạm Desktop, Web PWA di động) mà không vi phạm nguyên tắc bảo toàn tài chính và provenance, Phase 2 thiết lập nền tảng xác thực theo vai trò, quản lý phiên có trạng thái, cơ chế kiểm soát đồng thời lạc quan dựa trên revision, và pipeline xử lý lệnh bất biến (idempotent command pipeline).
+
+### 11.1 Mô Hình Xác Thực & Quản Lý Phiên (Auth & Session Model)
+- **Hóa băm mã PIN (Hashed PINs):** Mã PIN vai trò (Admin, Staff) không còn lưu plaintext trong `app_settings`. Migration V25 thiết lập bảng `auth_credentials` lưu trữ salt ngẫu nhiên và hash mật mã (PBKDF2/HMAC-SHA256, 600,000 vòng lặp) qua [`SqliteRoleCredentialStore.cs`](file:///D:/___TOOLS/__TINIX/LalabReport/src/LalabAutoReport.Infrastructure/Data/SqliteRoleCredentialStore.cs). Trình dọn dẹp [`CredentialPlaintextScrubber.cs`](file:///D:/___TOOLS/__TINIX/LalabReport/src/LalabAutoReport.Application/Auth/CredentialPlaintextScrubber.cs) tự động xóa sạch các giá trị plaintext cũ sau khi chuyển đổi.
+- **Phiên làm việc có trạng thái (Stateful Sessions):** Migration V26 bổ sung bảng `auth_sessions`, được quản lý bởi [`ISessionStore`](file:///D:/___TOOLS/__TINIX/LalabReport/src/LalabAutoReport.Application/Auth/ISessionStore.cs) và [`SqliteSessionStore.cs`](file:///D:/___TOOLS/__TINIX/LalabReport/src/LalabAutoReport.Infrastructure/Data/SqliteSessionStore.cs). Mỗi phiên lưu `session_id`, `role`, `device_id`, `credential_epoch`, `issued_at`, `expires_at`, và `revoked_at`.
+- **Thu hồi phiên tức thì (Instant Revocation & Epoch Invalidation):** Token Bearer mang `SessionId` và `CredentialEpoch`. Khi người dùng đăng xuất, Admin gọi lệnh thu hồi phiên (`/api/v1/admin/sessions/revoke-all`), hoặc khi mã PIN bị thay đổi (tăng `credential_epoch`), toàn bộ token thuộc phiên hoặc mang epoch cũ bị vô hiệu hóa ngay lập tức tại bước kiểm tra token.
+- **Giới hạn tốc độ đăng nhập (Rate Limiting):** [`LoginRateLimiter.cs`](file:///D:/___TOOLS/__TINIX/LalabReport/src/LalabAutoReport.Application/Auth/LoginRateLimiter.cs) theo dõi và giới hạn các lần thử PIN sai theo địa chỉ IP và loại thiết bị client, áp dụng thời gian chờ lũy tiến và khóa tạm thời nhằm ngăn chặn vét cạn PIN.
+
+### 11.2 Vị Trí Thực Thi Quyền Hạn (Capability Enforcement Location)
+Quyền hạn trong hệ thống được kiểm soát nghiêm ngặt qua 3 lớp phòng vệ:
+1. **Lớp cổng ghi LAN (`LanWriteGate`):** Nằm tại HTTP middleware trước khi yêu cầu đi vào router ([`LanWriteGate.cs`](file:///D:/___TOOLS/__TINIX/LalabReport/src/LalabAutoReport.Infrastructure/Web/LanWriteGate.cs), [`KestrelMobileWebServer.cs`](file:///D:/___TOOLS/__TINIX/LalabReport/src/LalabAutoReport.Infrastructure/Web/KestrelMobileWebServer.cs#L181-L199)). Bất kỳ endpoint ghi nào không thuộc danh sách capability được cho phép bởi cờ `--lan-writes` đều bị từ chối ngay với mã lỗi `503 WRITES_DISABLED_UNTIL_PHASE2`.
+2. **Lớp phân giải ngữ cảnh tác tử (`ActorContext`):** Middleware xác thực token, kiểm tra trạng thái session trong SQLite, tạo đối tượng [`ActorContext`](file:///D:/___TOOLS/__TINIX/LalabReport/src/LalabAutoReport.Contracts/Auth/ActorContext.cs) chứa vai trò và danh sách các capabilities cụ thể, lưu vào `HttpContext.Items["ActorContext"]`.
+3. **Lớp Handler nghiệp vụ (`Command Handlers`):** Nằm trong use-case handler ([`OrderOperationalCommandHandler.cs`](file:///D:/___TOOLS/__TINIX/LalabReport/src/LalabAutoReport.Application/Commands/OrderOperationalCommandHandler.cs)). Mỗi thao tác kiểm tra tường minh quyền hạn nghiệp vụ, ví dụ `actor.Require(Capabilities.OrdersSetDelivered)`. Nếu tác tử không có quyền, handler quăng `CapabilityDeniedException` và trả về mã lỗi `403 FORBIDDEN_CAPABILITY`.
+
+### 11.3 Cột Số Hiệu Sửa Đổi & Trigger Cơ Sở Dữ Liệu (Aggregate Revision Columns & Database Triggers)
+Để hỗ trợ kiểm soát tương tranh lạc quan mà không bỏ sót bất kỳ luồng ghi nào trong hệ thống:
+- **Cột revision trên Aggregate:**
+  - Bảng `orders` (Migration V27): tách biệt 3 nhóm trường vận hành độc lập: `delivered_revision`, `printed_revision`, `note_revision`.
+  - Bảng `customer_bills` (Migration V27): bổ sung cột `revision` đại diện cho toàn bộ vòng đời hóa đơn (draft, locking, reopening, payment).
+- **Trigger tự động tăng Revision (Migration V29 `ChangeJournalAndRevisionTriggers`):**
+  - Các trigger `AFTER UPDATE` ([`trg_orders_delivered_revision`](file:///D:/___TOOLS/__TINIX/LalabReport/src/LalabAutoReport.Infrastructure/Data/Migrations/20261025_ChangeJournalAndRevisionTriggers.cs), `trg_orders_printed_revision`, `trg_orders_note_revision`, `trg_customer_bills_revision`) kiểm tra điều kiện `WHEN OLD.col IS NOT NEW.col`. Khi có thay đổi thực sự, trigger tự động tăng revision lên 1 và ghi nhật ký thay đổi vào bảng `change_journal`.
+  - **Lý do thiết kế:** Đảm bảo tính bất biến ở tầng cơ sở dữ liệu. Mọi tác nhân cập nhật — dù là `ScanService`, `PrintStatusService`, Cloud Inbound Sync, Standalone Desktop UI hay LAN Command API — đều tự động làm tăng revision và ghi nhật ký mà không cần mỗi repository hay service phải nhớ gọi logic tăng revision.
+  - SQLite có cấu hình `recursive_triggers = OFF` theo mặc định, đảm bảo lệnh `UPDATE` nội bộ của trigger không kích hoạt đệ quy.
+
+### 11.4 Pipeline Xử Lý Lệnh Đơn Độc & Bất Biến (Idempotent Command Pipeline)
+Mọi đột biến trạng thái vận hành đều đi qua [`OrderOperationalCommandHandler`](file:///D:/___TOOLS/__TINIX/LalabReport/src/LalabAutoReport.Application/Commands/OrderOperationalCommandHandler.cs) và [`SqliteOrderOperationalCommandStore.cs`](file:///D:/___TOOLS/__TINIX/LalabReport/src/LalabAutoReport.Infrastructure/Data/SqliteOrderOperationalCommandStore.cs):
+- **Khóa trong bộ nhớ (`InFlightOperationRegistry`):** Tiếp nhận `operationId` (UUID) và chặn các request gửi trùng lặp đang trong quá trình thực thi song song, trả về mã `409 OPERATION_IN_PROGRESS`.
+- **Giao dịch nguyên tử duy nhất (`BEGIN IMMEDIATE`):**
+  1. **Kiểm tra sổ cái biên nhận (`command_receipts`):**
+     - Nếu đã tồn tại `operation_id` với cùng `payload_hash` và `capability`: commit ngay và trả về kết quả đã lưu (`isReplay = true`), tuyệt đối không lặp lại đột biến nghiệp vụ.
+     - Nếu trùng `operation_id` nhưng khác `payload_hash`: rollback và quăng `IdempotencyConflictException` (`409 IDEMPOTENCY_CONFLICT`).
+  2. **Kiểm tra tương tranh lạc quan (Revision Check):**
+     - Đọc trạng thái và revision hiện tại của đơn hàng.
+     - So sánh `expectedRevision` với revision hiện hành. Nếu không khớp: rollback và quăng `StaleRevisionException` (`409 STALE_REVISION`), trả về revision và giá trị hiện hành để client cập nhật giao diện và thử lại.
+  3. **Cập nhật trạng thái thực thể:** Thực hiện lệnh `UPDATE` trên bảng `orders`. Trigger SQLite tự động tăng revision và ghi dòng tương ứng vào `change_journal`.
+  4. **Ghi nhật ký kiểm toán (`audit_log`):** Ghi nhận `action`, `outcome` (`Committed` hoặc `NoChange`), `before_json`, `after_json`, `actor_kind`, `actor_role`, `actor_session_id`, `client_ip`.
+  5. **Ghi sổ cái biên nhận (`command_receipts`):** Lưu kết quả cuối cùng với trạng thái `Committed` và `completed_at_utc`.
+  6. **Commit Transaction:** Hoàn tất giao dịch.
+- **Quy tắc bất biến "Không biên nhận bán phần" (No Partial Receipts):** Bản ghi `command_receipts` chỉ tồn tại khi toàn bộ transaction commit thành công. Bất kỳ lỗi nào (xung đột revision, vi phạm quyền hạn, lỗi cú pháp, tranh chấp khóa) đều rollback toàn bộ transaction, không để lại bản ghi rác.
+
+### 11.5 Giao Diện Lập Trình LAN v1 (LAN v1 API Surface)
+Các endpoint phục vụ máy trạm và ứng dụng di động nằm dưới nhóm đường dẫn `/api/v1/...` ([`ApiV1Endpoints.cs`](file:///D:/___TOOLS/__TINIX/LalabReport/src/LalabAutoReport.Infrastructure/Web/ApiV1Endpoints.cs)):
+- **Tiêu đề bắt buộc:** `X-Lalab-Client-Api: 1.x` (1.0). Máy khách thiếu tiêu đề hoặc lệch phiên bản chính sẽ nhận `426 Upgrade Required` (`CLIENT_TOO_OLD` hoặc `SERVER_TOO_OLD`).
+- **Xác thực:** Tiêu đề `Authorization: Bearer <token>`.
+- **Nhóm Endpoint vận hành:**
+  - `POST /api/v1/auth/sessions`: Đăng nhập bằng PIN, cấp token phiên.
+  - `GET /api/v1/auth/sessions/current`: Lấy thông tin phiên làm việc hiện tại.
+  - `DELETE /api/v1/auth/sessions/current`: Đăng xuất, hủy phiên.
+  - `POST /api/v1/admin/sessions/revoke-all`: Quyền Admin thu hồi phiên làm việc.
+  - `GET /api/v1/orders/{id}/operational-state`: Đọc chi tiết giá trị và revision của các trường `delivered`, `printed`, `note`.
+  - `POST /api/v1/orders/{id}/delivered`: Đặt trạng thái giao hàng với `operationId` và `expectedRevision`.
+  - `POST /api/v1/orders/{id}/printed`: Đặt trạng thái in với `operationId` và `expectedRevision`.
+  - `POST /api/v1/orders/{id}/note`: Đặt ghi chú với `operationId` và `expectedRevision`.
+  - `GET /api/v1/operations/{operationId}`: Tra cứu trạng thái xử lý của một operation ID (`committed`, `pending`, `not_found`).
+- **Định dạng lỗi quy chuẩn:** `ApiErrorResponse` bao gồm `code`, `message`, và `correlationId`.
+
+### 11.6 Cổng Kiểm Soát Ghi (Write Gate) & Ranh Giới Đơn Ghi / Quét Đĩa (Single-Writer & Scan Boundary)
+- **Cờ khởi động `--lan-writes none|orders`:**
+  - Mặc định: `orders` (bắt đầu từ Phase 2 Gate commit `ebf61a3`).
+  - Mở quyền ghi cho 3 thao tác vận hành đơn hàng: `orders.setDelivered`, `orders.setPrinted`, `orders.editNote`.
+  - Các thao tác tài chính (thanh toán bill), in ấn máy chủ, và bảo trì thumbnail tiếp tục trả về fail-closed `503 WRITES_DISABLED_UNTIL_PHASE2` chờ hoàn thiện tại Phase 4 và Phase 5.
+  - Cơ chế Rollback: Chỉ cần chỉ định `--lan-writes none` khi khởi động Server để lập tức hoàn nguyên về chế độ Read-Only hoàn toàn của Phase 1 mà không cần can thiệp lược đồ cơ sở dữ liệu.
+- **Ranh giới đơn ghi & Quét đĩa (Single-Writer Boundary, Q-B7):**
+  - Để bảo đảm an toàn dữ liệu tuyệt đối theo ADR 002, Server không kích hoạt bộ điều phối quét tự động ngầm (`AutoScanCoordinator` bị vô hiệu hóa trong profile máy chủ theo quyết định Q-B7).
+  - SQLite hoạt động ở chế độ WAL (Write-Ahead Logging) với một writer duy nhất tại một thời điểm (`BEGIN IMMEDIATE`). Khi có sự tranh chấp ghi giữa các transaction (hoặc mô phỏng quét đĩa), SQLite áp dụng thời gian chờ 5 giây. Nếu quá hạn chờ, server chuyển đổi `SQLITE_BUSY` thành phản hồi `503 SERVER_BUSY`, cho phép client thử lại an toàn với cùng `operationId`.
+
+
 
