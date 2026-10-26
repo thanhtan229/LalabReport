@@ -39,6 +39,3 @@ CREATE TABLE IF NOT EXISTS cloud_gallery_media (
 
 CREATE INDEX IF NOT EXISTS idx_gallery_media_last_used ON cloud_gallery_media(last_used_at);
 
-ALTER TABLE cloud_bills ADD COLUMN phone_snapshot TEXT;
-ALTER TABLE cloud_bills ADD COLUMN shipping_address_snapshot TEXT;
-ALTER TABLE cloud_bills ADD COLUMN note TEXT;

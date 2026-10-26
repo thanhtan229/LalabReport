@@ -98,3 +98,13 @@ Remaining known gaps: Session 0 Windows Service install/rendering NOT VERIFIED; 
 - Evidence: `docs/qa-evidence-phase2/` (QA + B4 load report/JSON/README).
 - Remaining limitations: Session 0 Windows Service install/rendering NOT VERIFIED; scan contention is simulated (real scan disabled in server profile per Q-B7); production-scale performance unproven; command receipt retention needs later maintenance; desktop standalone still writes its own LocalAppData DB (Phase 3 client); desktop startup credential scrubber optional.
 - Next: **Phase 3** — desktop HTTP client mode (no local business DB writer, session/conflict UX), device pairing/TLS/protected workstation credentials, reconnect/catch-up via change-journal cursors + database generation, operation lookup/retry safety; then Phase 4 billing/payment/print commands.
+
+
+---
+
+## Runtime & Cloud deployment (27/10/2026)
+
+- **.NET 10 LTS**: toàn bộ solution retarget `net10.0`/`net10.0-windows`; WindowsServices 10.0.12; workflow/scripts/docs cập nhật; commit `c274598`. Build Debug/Release 0 errors, full suite 858 passed trên net10; app net10 chạy LAN (PID 107796) với PWA/Tailwind local.
+- **Cloud production**: worker `9226ad9a-9ef0-408e-aa4a-7c4c23ae6917` deployed; D1 migration `0008_bill_label_snapshots.sql` applied (3 cột bill snapshot còn thiếu do 0007 đã được apply bản cũ). Xem `docs/CLOUD_DEPLOY_20261027.md`; backup D1 `artifacts/cloud-d1-backup-20261027.sql` (local).
+- Verify: health 200; PWA gallery/label 200; gallery request 401; sync jobs 403; D1 đủ bảng gallery và cột bill; secrets giữ nguyên.
+- Lưu ý LAN PWA: Tailwind đã vendor local (commit `63d1e4b`), không phụ thuộc internet.
