@@ -97,7 +97,8 @@ Remaining known gaps: Session 0 Windows Service install/rendering NOT VERIFIED; 
 - Enabled writes: default `--lan-writes orders` (delivered/printed/note); payment/print/maintenance remain 503; rollback `--lan-writes none`.
 - Evidence: `docs/qa-evidence-phase2/` (QA + B4 load report/JSON/README).
 - Remaining limitations: Session 0 Windows Service install/rendering NOT VERIFIED; scan contention is simulated (real scan disabled in server profile per Q-B7); production-scale performance unproven; command receipt retention needs later maintenance; desktop standalone still writes its own LocalAppData DB (Phase 3 client); desktop startup credential scrubber optional.
-- Next: **Phase 3** — desktop HTTP client mode (no local business DB writer, session/conflict UX), device pairing/TLS/protected workstation credentials, reconnect/catch-up via change-journal cursors + database generation, operation lookup/retry safety; then Phase 4 billing/payment/print commands.
+- **Phase 3 (desktop workstation client) — ĐÃ HỦY theo quyết định Product Owner (27/10/2026).** Không có code Phase 3 trên master. Code/tài liệu Phase 3 được lưu trong bundle `artifacts/archive/phase3-archive-20261027.bundle` (ref cũ: `backup/phase3-wip-20261026`, tag `phase3-final-20261026`, `pre-phase3-restore`; đã xóa khỏi repo, kiểm tra bằng `git bundle verify`).
+- Next: Phase 4 chưa bắt đầu; chờ Product Owner xác nhận hướng đi (LAN desktop/workstation hay roadmap khác) trước khi dispatch.
 
 
 ---

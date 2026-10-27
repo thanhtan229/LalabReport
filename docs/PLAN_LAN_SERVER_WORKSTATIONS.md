@@ -401,7 +401,8 @@ Trạng thái của batch lập kế hoạch: chỉ thêm tài liệu này. Chư
 - **Phase 2:**
   - **B1–B3 hoàn tất (Gate PASS):** Hashed PINs, stateful sessions, aggregate revisions, triggers, command pipeline, v1 order commands, --lan-writes orders default mode.
   - **B4 hoàn tất (Evidence recorded):** Load harness 10 clients, 60s bounded run, parallel scan-shaped SQLite contention, zero partials, p95 reads 6.9 ms, p95 commands 464.7 ms (bằng chứng docs/qa-evidence-phase2/B4_LOAD_REPORT.md + JSON).
-- **Trạng thái hiện tại:** Phase 2 B1–B3 done / B4 evidence recorded. **Phase 3 tiếp theo** (Desktop Client Mode & LAN Pairing / Discovery).
+- **Trạng thái hiện tại:** Phase 2 B1–B3 done / B4 evidence recorded.
+- **Phase 3 (Desktop client mode): ĐÃ HỦY** theo quyết định Product Owner (27/10/2026). Code và evidence Phase 3 nằm trong bundle lưu trữ `artifacts/archive/phase3-archive-20261027.bundle`; không có trên master. Các mục Phase 3–6 bên trên chỉ còn là kế hoạch lịch sử, không phải việc đang chờ.
 
 Tài liệu Phase 0 tham chiếu:
 - docs/adr/ADR-002-lan-authoritative-server.md
