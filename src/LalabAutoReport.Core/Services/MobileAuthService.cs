@@ -149,36 +149,4 @@ public class MobileAuthService : IMobileAuthService
             return false;
         }
     }
-
-    [Obsolete("Use IRoleCredentialStore.VerifyAsync instead")]
-    public MobileUserRole? AuthenticateWithPin(string pin, AppSettings settings)
-    {
-        if (string.IsNullOrWhiteSpace(pin) || settings == null)
-        {
-            return null;
-        }
-
-        if (string.IsNullOrWhiteSpace(settings.AdminPin))
-        {
-            return null;
-        }
-
-        string cleanPin = pin.Trim();
-        if (!string.IsNullOrWhiteSpace(settings.StaffPin) && string.Equals(settings.AdminPin.Trim(), settings.StaffPin.Trim(), StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        if (cleanPin == settings.AdminPin.Trim())
-        {
-            return MobileUserRole.Admin;
-        }
-
-        if (!string.IsNullOrWhiteSpace(settings.StaffPin) && cleanPin == settings.StaffPin.Trim())
-        {
-            return MobileUserRole.Staff;
-        }
-
-        return null;
-    }
 }

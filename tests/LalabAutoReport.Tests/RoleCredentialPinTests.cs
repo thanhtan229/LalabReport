@@ -8,8 +8,8 @@ using Xunit;
 
 namespace LalabAutoReport.Tests;
 
-// PIN verification now goes through the hashed role credential store (replaces the obsolete
-// MobileAuthService.AuthenticateWithPin(pin, AppSettings) check). Same fail-closed rules apply.
+// PIN verification goes through the hashed role credential store. The former plaintext
+// AppSettings check was removed; the same fail-closed rules apply.
 public class RoleCredentialPinTests : IDisposable
 {
     private readonly string _tempRoot;
