@@ -78,6 +78,18 @@ public class SystemTrayAndBackgroundDaemonTests : IDisposable
         finalSettings.AutoStartWithWindows.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("testhost", false)]
+    [InlineData("LalabAutoReport.LoadHarness", false)]
+    [InlineData("LalabAutoReport.CrashHarness", false)]
+    [InlineData("dotnet", false)]
+    [InlineData("LalabAutoReport.UI", true)]
+    [InlineData("LalabAutoReport", true)]
+    public void WindowsStartupHelper_OnlyRealAppHostMayWriteRunKey(string processName, bool expected)
+    {
+        WindowsStartupHelper.IsAutoStartHostProcess(processName).Should().Be(expected);
+    }
+
     [Fact]
     public void WindowsStartupHelper_CanCheckWithoutThrowingException()
     {

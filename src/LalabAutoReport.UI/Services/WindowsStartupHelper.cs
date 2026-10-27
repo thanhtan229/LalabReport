@@ -25,10 +25,22 @@ public static class WindowsStartupHelper
         }
     }
 
+    public static bool IsAutoStartHostProcess(string? processName)
+    {
+        if (string.IsNullOrWhiteSpace(processName)) return false;
+        return processName.Equals("LalabAutoReport.UI", StringComparison.OrdinalIgnoreCase)
+            || processName.Equals("LalabAutoReport", StringComparison.OrdinalIgnoreCase);
+    }
+
     public static void SetAutoStart(bool enable)
     {
         try
         {
+            // Never write the Run key from tests, harnesses or dotnet hosts.
+            // Otherwise testhost.exe (or a harness) would become the Windows startup entry.
+            string? processName = Path.GetFileNameWithoutExtension(Environment.ProcessPath);
+            if (!IsAutoStartHostProcess(processName)) return;
+
             using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, true);
             if (key == null) return;
 
