@@ -36,6 +36,7 @@
     <ProjectReference Include="..\..\src\LalabAutoReport.Server\LalabAutoReport.Server.csproj" />
     <ProjectReference Include="..\..\src\LalabAutoReport.UI\LalabAutoReport.UI.csproj" />
     <ProjectReference Include="..\LalabAutoReport.LoadHarness\LalabAutoReport.LoadHarness.csproj" />
+    <ProjectReference Include="..\LalabAutoReport.CrashHarness\LalabAutoReport.CrashHarness.csproj" />
   </ItemGroup>
 
 </Project>

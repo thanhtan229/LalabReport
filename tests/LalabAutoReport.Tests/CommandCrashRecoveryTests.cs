@@ -33,7 +33,10 @@ public class CommandCrashRecoveryTests : IDisposable
 
         _harnessDllPath = Path.GetFullPath(Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory,
-            "..", "..", "..", "..", "LalabAutoReport.CrashHarness", "bin", "Debug", "net8.0-windows", "LalabAutoReport.CrashHarness.dll"));
+            "..", "..", "..", "..", "LalabAutoReport.CrashHarness", "bin",
+            new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory).Parent?.Name ?? "Debug",
+            new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory).Name,
+            "LalabAutoReport.CrashHarness.dll"));
     }
 
     public void Dispose()

@@ -22,7 +22,7 @@ public class CrashObserver : ICommandPipelineObserver
     {
         if (string.Equals(_crashPoint, "before_commit", StringComparison.OrdinalIgnoreCase))
         {
-            Environment.FailFast("Crash injected before commit by CrashHarness.");
+            Environment.Exit(134); // abrupt process death inside the open transaction (simulates crash without WER/dump wait)
         }
         return Task.CompletedTask;
     }
@@ -31,7 +31,7 @@ public class CrashObserver : ICommandPipelineObserver
     {
         if (string.Equals(_crashPoint, "after_commit", StringComparison.OrdinalIgnoreCase))
         {
-            Environment.FailFast("Crash injected after commit by CrashHarness.");
+            Environment.Exit(134); // abrupt process death after commit (simulates crash without WER/dump wait)
         }
         return Task.CompletedTask;
     }

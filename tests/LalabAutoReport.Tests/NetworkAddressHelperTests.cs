@@ -118,6 +118,8 @@ public class NetworkAddressHelperTests
 
         localIp.Should().NotBeNullOrWhiteSpace();
         localIp.Should().NotStartWith("172.21.192.", "Should not pick Hyper-V WSL virtual switch");
-        localIp.Should().Be("192.168.100.24", "Should pick the real physical Ethernet IP on this machine");
+        System.Net.IPAddress.TryParse(localIp, out var parsedIp).Should().BeTrue("Should return a valid IPv4 address");
+        parsedIp!.AddressFamily.Should().Be(System.Net.Sockets.AddressFamily.InterNetwork);
+        System.Net.IPAddress.IsLoopback(parsedIp).Should().BeFalse("Should pick a LAN address, not loopback");
     }
 }
