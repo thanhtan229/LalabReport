@@ -4,12 +4,10 @@
     <Project Path="src/LalabAutoReport.Application/LalabAutoReport.Application.csproj" />
     <Project Path="src/LalabAutoReport.Core/LalabAutoReport.Core.csproj" />
     <Project Path="src/LalabAutoReport.Infrastructure/LalabAutoReport.Infrastructure.csproj" />
-    <Project Path="src/LalabAutoReport.Server/LalabAutoReport.Server.csproj" />
     <Project Path="src/LalabAutoReport.UI/LalabAutoReport.UI.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/LalabAutoReport.Tests/LalabAutoReport.Tests.csproj" />
     <Project Path="tests/LalabAutoReport.CrashHarness/LalabAutoReport.CrashHarness.csproj" />
-    <Project Path="tests/LalabAutoReport.LoadHarness/LalabAutoReport.LoadHarness.csproj" />
   </Folder>
 </Solution>

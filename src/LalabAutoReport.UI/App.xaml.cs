@@ -17,7 +17,6 @@ using LalabAutoReport.Infrastructure.Services;
 using LalabAutoReport.UI.Services;
 using LalabAutoReport.UI.ViewModels;
 using LalabAutoReport.Infrastructure.Composition;
-using LalabAutoReport.Infrastructure.Hosting;
 using LalabAutoReport.Infrastructure.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
@@ -154,22 +153,6 @@ public partial class App : System.Windows.Application
             try
             {
                 LoggingSetup.Initialize(_isolatedDataDirectory == null ? null : Path.Combine(_isolatedDataDirectory, "logs"));
-                if (ServerLockDetector.IsServerLockHeld())
-                {
-                    const string lockHeldMessage = "[LỖI KHỞI ĐỘNG] Máy chủ Lalab Server đang hoạt động (server.lock đang được nắm giữ). Thao tác --toggle-printed ngoại tuyến bị từ chối để tránh xung đột dữ liệu.";
-                    Log.Error(lockHeldMessage);
-                    Console.Error.WriteLine(lockHeldMessage);
-                    LoggingSetup.CloseAndFlush();
-                    if (_singleInstanceMutex != null)
-                    {
-                        try { _singleInstanceMutex.ReleaseMutex(); } catch { }
-                        _singleInstanceMutex.Dispose();
-                        _singleInstanceMutex = null;
-                    }
-                    Environment.Exit(5);
-                    return;
-                }
-
                 var connFactory = new SqliteConnectionFactory(_isolatedDataDirectory == null ? null : Path.Combine(_isolatedDataDirectory, "lalab_autoreport.db"));
                 var migrator = new DatabaseMigrator(connFactory);
                 await migrator.MigrateAsync();
@@ -235,6 +218,17 @@ public partial class App : System.Windows.Application
         {
             var migrator = _serviceProvider.GetRequiredService<IDatabaseMigrator>();
             await migrator.MigrateAsync();
+            try
+            {
+                var receiptRetention = new SqliteCommandReceiptRetention(_serviceProvider.GetRequiredService<ISqliteConnectionFactory>());
+                int prunedReceipts = await receiptRetention.PruneAsync(DateTimeOffset.UtcNow);
+                Log.Information("Pruned {Count} command receipts past the retention window.", prunedReceipts);
+            }
+            catch (Exception ex)
+            {
+                // Retention is housekeeping; a failure is logged and must not block startup.
+                Log.Warning(ex, "Command receipt retention failed; startup continues.");
+            }
             if (_isolatedDataDirectory != null)
             {
                 var isolatedSettings = await _serviceProvider.GetRequiredService<ISettingsRepository>().GetSettingsAsync();

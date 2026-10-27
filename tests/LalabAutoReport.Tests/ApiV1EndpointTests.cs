@@ -21,7 +21,6 @@ using LalabAutoReport.Core.Interfaces;
 using LalabAutoReport.Infrastructure.Composition;
 using LalabAutoReport.Infrastructure.Data;
 using LalabAutoReport.Infrastructure.Web;
-using LalabAutoReport.Server.Health;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -331,24 +330,6 @@ public class ApiV1EndpointTests : IDisposable
         unmappedResp.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         var err = await unmappedResp.Content.ReadFromJsonAsync<ApiErrorResponse>();
         err!.Code.Should().Be(ApiErrorCodes.WritesDisabledUntilPhase2);
-    }
-
-    [Fact]
-    public void Ready_ReportsLatestSchemaAndCapabilities()
-    {
-        var caps = new List<string> { Capabilities.OrdersSetDelivered, Capabilities.OrdersSetPrinted, Capabilities.OrdersEditNote };
-        var provider = new ServerHealthInfoProvider(
-            startedAtUtc: DateTimeOffset.UtcNow,
-            schemaVersionProvider: () => DatabaseMigrator.LatestVersion,
-            isReadyProvider: () => true,
-            componentsProvider: () => new Dictionary<string, string> { ["database"] = "ready" },
-            capabilitiesProvider: () => caps);
-
-        var health = provider.GetReadyHealth();
-        health.Status.Should().Be("Ready");
-        health.SchemaVersion.Should().Be(DatabaseMigrator.LatestVersion);
-        health.Capabilities.Should().NotBeNull();
-        health.Capabilities.Should().BeEquivalentTo(caps);
     }
 
     [Fact]

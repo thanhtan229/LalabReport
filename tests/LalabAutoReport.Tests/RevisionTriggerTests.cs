@@ -13,7 +13,6 @@ using LalabAutoReport.Contracts.Commands;
 using LalabAutoReport.Core.Domain;
 using LalabAutoReport.Core.Interfaces;
 using LalabAutoReport.Infrastructure.Data;
-using LalabAutoReport.Server.Inventory;
 using Microsoft.Data.Sqlite;
 using Xunit;
 
@@ -258,82 +257,6 @@ public class RevisionTriggerTests : IDisposable
             "SELECT * FROM change_journal WHERE entity_id = @Id AND entity_type = 'customer_bill'", new { Id = billId })).ToList();
         journalRows.Should().HaveCount(1);
         ((long)journalRows[0].revision).Should().Be(1);
-    }
-
-    [Fact]
-    public async Task Inventory_SnapshotHashUnchangedAfterV25toV29()
-    {
-        // 1. Migrate up to version 24
-        await _migrator.MigrateToVersionAsync(24);
-
-        using (var conn = (SqliteConnection)_connectionFactory.CreateConnection())
-        {
-            // Seed V24 data including customer, root folder, orders, customer_bills
-            string nowIso = DateTimeOffset.UtcNow.ToString("o");
-            long rootId = await conn.QuerySingleAsync<long>(@"
-                INSERT INTO root_folders (name, full_path, is_active, is_default, created_at, updated_at)
-                VALUES ('Root', 'C:\Root', 1, 1, @Now, @Now);
-                SELECT last_insert_rowid();
-            ", new { Now = nowIso });
-
-            long custId = await conn.QuerySingleAsync<long>(@"
-                INSERT INTO customers (canonical_name, price_tier, created_at, updated_at)
-                VALUES ('Khách A', 'Retail', @Now, @Now);
-                SELECT last_insert_rowid();
-            ", new { Now = nowIso });
-
-            long orderId = await conn.QuerySingleAsync<long>(@"
-                INSERT INTO orders (
-                    order_code, work_date, customer_id, original_folder_name, relative_path, status,
-                    is_printed, print_progress, is_delivered, root_folder_id, created_at, updated_at
-                ) VALUES (
-                    'DH-261026-001', '2026-10-26', @CustId, 'Khách A', '2026-10-26\Khách A', 'Billed',
-                    1, 1, 0, @RootId, @Now, @Now
-                );
-                SELECT last_insert_rowid();
-            ", new { CustId = custId, RootId = rootId, Now = nowIso });
-
-            long billId = await conn.QuerySingleAsync<long>(@"
-                INSERT INTO customer_bills (
-                    bill_number, customer_id, customer_name_snapshot, period_start, period_end, status,
-                    product_subtotal, adjustments_total, grand_total, locked_at, is_paid, created_at, updated_at
-                ) VALUES (
-                    'BILL-261026-0001', @CustId, 'Khách A', '2026-10-26', '2026-10-26', 'Locked',
-                    150000, 0, 150000, @Now, 1, @Now, @Now
-                );
-                SELECT last_insert_rowid();
-            ", new { CustId = custId, Now = nowIso });
-
-
-        }
-
-        SqliteConnection.ClearAllPools();
-
-        // Inventory report before V25-V29 migrations
-        var inventoryBefore = new ServerInventoryService(_tempDbPath);
-        var reportV24 = await inventoryBefore.GenerateReportAsync();
-
-        reportV24.CustomerBills.Should().Be(1);
-        reportV24.LockedBills.Should().Be(1);
-        reportV24.LockedBillsTotalAmountVnd.Should().Be(150000);
-        string hashV24 = reportV24.LockedBillsSha256;
-        hashV24.Should().NotBeNullOrWhiteSpace();
-
-        // 2. Migrate to latest (V29)
-        await _migrator.MigrateAsync();
-
-        SqliteConnection.ClearAllPools();
-
-        // Inventory report after V25-V29 migrations
-        var inventoryAfter = new ServerInventoryService(_tempDbPath);
-        var reportV29 = await inventoryAfter.GenerateReportAsync();
-
-        reportV29.CustomerBills.Should().Be(1);
-        reportV29.LockedBills.Should().Be(1);
-        reportV29.LockedBillsTotalAmountVnd.Should().Be(150000);
-
-        // F9 critical assertion: snapshot hash must remain identical before and after V25-V29 migrations!
-        reportV29.LockedBillsSha256.Should().Be(hashV24);
     }
 
     [Fact]
