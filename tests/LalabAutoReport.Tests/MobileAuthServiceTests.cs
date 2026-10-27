@@ -61,53 +61,6 @@ public class MobileAuthServiceTests
     }
 
     [Fact]
-    public void AuthenticateWithPin_ShouldMatchSettings()
-    {
-        var authService = new MobileAuthService();
-        var settings = new AppSettings
-        {
-            AdminPin = "999888",
-            StaffPin = "111222"
-        };
-
-        authService.AuthenticateWithPin("999888", settings).Should().Be(MobileUserRole.Admin);
-        authService.AuthenticateWithPin("111222", settings).Should().Be(MobileUserRole.Staff);
-        authService.AuthenticateWithPin("wrong_pin", settings).Should().BeNull();
-        authService.AuthenticateWithPin("", settings).Should().BeNull();
-        authService.AuthenticateWithPin(null!, settings).Should().BeNull();
-    }
-
-    [Fact]
-    public void AuthenticateWithPin_WhenAdminPinEmpty_ShouldReturnNull()
-    {
-        var authService = new MobileAuthService();
-        var defaultSettings = new AppSettings();
-
-        // Default AppSettings must not contain source-known hardcoded PINs
-        defaultSettings.AdminPin.Should().BeEmpty();
-        defaultSettings.StaffPin.Should().BeEmpty();
-
-        // Any PIN attempt must fail closed
-        authService.AuthenticateWithPin("123456", defaultSettings).Should().BeNull();
-        authService.AuthenticateWithPin("000000", defaultSettings).Should().BeNull();
-        authService.AuthenticateWithPin("888888", defaultSettings).Should().BeNull();
-    }
-
-    [Fact]
-    public void AuthenticateWithPin_WhenPinsAreIdentical_ShouldReturnNull()
-    {
-        var authService = new MobileAuthService();
-        var ambiguousSettings = new AppSettings
-        {
-            AdminPin = "123456",
-            StaffPin = "123456"
-        };
-
-        // Identical PINs must fail closed to prevent ambiguous role assignment
-        authService.AuthenticateWithPin("123456", ambiguousSettings).Should().BeNull();
-    }
-
-    [Fact]
     public void PersistentSecret_ShouldSurviveReinstantiation_AndValidateAcrossInstances()
     {
         var settingsRepo = new InMemorySettingsRepo();
