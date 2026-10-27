@@ -11,6 +11,7 @@ permissions:
 jobs:
   build-and-release:
     runs-on: windows-latest
+    timeout-minutes: 40
 
     steps:
       - name: Checkout repository
@@ -21,21 +22,49 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Resolve version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Release tag must look like vX.Y.Z (received: ${{ github.ref_name }})"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "assembly=$version.0" >> $env:GITHUB_OUTPUT
+
       - name: Run Tests
-        run: dotnet test -c Release --nologo
+        run: dotnet test tests/LalabAutoReport.Tests/LalabAutoReport.Tests.csproj -c Release --nologo
 
       - name: Publish Standalone Executable
-        run: dotnet publish src/LalabAutoReport.UI/LalabAutoReport.UI.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+        run: >
+          dotnet publish src/LalabAutoReport.UI/LalabAutoReport.UI.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:Version=${{ steps.version.outputs.version }}
+          -p:AssemblyVersion=${{ steps.version.outputs.assembly }}
+          -p:FileVersion=${{ steps.version.outputs.assembly }}
+          -p:InformationalVersion=${{ steps.version.outputs.version }}
+          -o publish
 
       - name: Rename Executable for Release
         shell: pwsh
         run: |
           Move-Item -Path "publish/LalabAutoReport.UI.exe" -Destination "publish/LalabAutoReport.exe" -Force
 
+      - name: Generate checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash publish/LalabAutoReport.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  LalabAutoReport.exe" | Set-Content -Path publish/LalabAutoReport.exe.sha256 -Encoding ascii
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: publish/LalabAutoReport.exe
+          files: |
+            publish/LalabAutoReport.exe
+            publish/LalabAutoReport.exe.sha256
           name: Lalab Auto Report ${{ github.ref_name }}
           draft: false
           prerelease: false
