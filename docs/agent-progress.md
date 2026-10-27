@@ -110,3 +110,5 @@ Remaining known gaps: Session 0 Windows Service install/rendering NOT VERIFIED; 
 - Lưu ý LAN PWA: Tailwind đã vendor local (commit `63d1e4b`), không phụ thuộc internet.
 
 - **Tailscale 2 xưởng**: runbook docs/TAILSCALE_TWO_WORKSHOPS.md; máy A 	iniwin01 100.81.149.85 đã verify HTTP PWA qua Tailscale; PC B + điện thoại làm theo runbook.
+
+- **Release v2.1.0** (tag 2.1.0, commit 79d903a): GitHub Actions success; asset LalabAutoReport.exe 217,428,437 bytes, sha256 19a3ab2a...2cb57, kèm .sha256. Auto-update versioning đã sửa (AssemblyVersion 2.1.0.0); xem docs/RELEASE_NOTES_v2.1.0.md.
