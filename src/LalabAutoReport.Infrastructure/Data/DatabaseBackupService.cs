@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Dapper;
 using LalabAutoReport.Core.Interfaces;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
@@ -80,8 +81,10 @@ public class DatabaseBackupService : IDatabaseBackupService
             CleanupOldBackups();
         }
 
-        // Secondary backup copy if configured (Google Drive / OneDrive / NAS)
-        if (_settingsRepository != null)
+        // Secondary backup copy if configured (Google Drive / OneDrive / NAS).
+        // A database that has not been migrated yet has no app_settings table, so no secondary
+        // folder can be configured there; skip the lookup instead of logging a false failure.
+        if (_settingsRepository != null && await AppSettingsTableExistsAsync(cancellationToken))
         {
             try
             {
@@ -114,6 +117,15 @@ public class DatabaseBackupService : IDatabaseBackupService
         );
 
         return result;
+    }
+
+    private async Task<bool> AppSettingsTableExistsAsync(CancellationToken cancellationToken)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        long count = await connection.ExecuteScalarAsync<long>(new CommandDefinition(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'app_settings';",
+            cancellationToken: cancellationToken));
+        return count > 0;
     }
 
     public async Task RestoreBackupAsync(string backupFilePath, CancellationToken cancellationToken = default)
