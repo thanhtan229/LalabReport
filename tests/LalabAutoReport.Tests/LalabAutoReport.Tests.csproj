@@ -33,9 +33,7 @@
     <ProjectReference Include="..\..\src\LalabAutoReport.Contracts\LalabAutoReport.Contracts.csproj" />
     <ProjectReference Include="..\..\src\LalabAutoReport.Application\LalabAutoReport.Application.csproj" />
     <ProjectReference Include="..\..\src\LalabAutoReport.Infrastructure\LalabAutoReport.Infrastructure.csproj" />
-    <ProjectReference Include="..\..\src\LalabAutoReport.Server\LalabAutoReport.Server.csproj" />
     <ProjectReference Include="..\..\src\LalabAutoReport.UI\LalabAutoReport.UI.csproj" />
-    <ProjectReference Include="..\LalabAutoReport.LoadHarness\LalabAutoReport.LoadHarness.csproj" />
     <ProjectReference Include="..\LalabAutoReport.CrashHarness\LalabAutoReport.CrashHarness.csproj" />
   </ItemGroup>
 
