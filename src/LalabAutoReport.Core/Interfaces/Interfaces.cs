@@ -728,8 +728,6 @@ public interface IMobileAuthService
     string GenerateToken(MobileUserRole role, DateTimeOffset issuedAt);
     bool TryValidateToken(string token, out MobileUserRole role);
     bool TryValidateToken(string token, out MobileUserRole role, out DateTimeOffset issuedAt);
-    [Obsolete("Use IRoleCredentialStore.VerifyAsync instead")]
-    MobileUserRole? AuthenticateWithPin(string pin, AppSettings settings);
 }
 
 /// <summary>

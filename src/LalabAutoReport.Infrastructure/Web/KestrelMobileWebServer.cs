@@ -295,32 +295,9 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
                 });
             }
 
-            if (string.IsNullOrWhiteSpace(settings.AdminPin))
-            {
-                return Results.Json(new { success = false, message = "Chưa cấu hình mã PIN Admin trên ứng dụng Desktop. Vui lòng vào Cài đặt để thiết lập mã PIN." }, statusCode: StatusCodes.Status503ServiceUnavailable);
-            }
-
-            if (!string.IsNullOrWhiteSpace(settings.StaffPin) && string.Equals(settings.AdminPin.Trim(), settings.StaffPin.Trim(), StringComparison.Ordinal))
-            {
-                return Results.Json(new { success = false, message = "Mã PIN Admin và Nhân viên không được trùng nhau. Vui lòng cấu hình lại trong Cài đặt." }, statusCode: StatusCodes.Status503ServiceUnavailable);
-            }
-
-#pragma warning disable CS0618
-            var role = _authService.AuthenticateWithPin(pin, settings);
-#pragma warning restore CS0618
-            if (role == null)
-            {
-                return Results.Json(new { success = false, message = "Mã PIN không chính xác." }, statusCode: StatusCodes.Status401Unauthorized);
-            }
-
-            string token = _authService.GenerateToken(role.Value);
-            return Results.Ok(new
-            {
-                success = true,
-                role = role.Value.ToString(),
-                token = token,
-                workshopName = settings.WorkshopName
-            });
+            // Fail closed: the hashed credential store (ISessionService) is the only PIN authority.
+            // Without it nothing can be verified, so no token is issued.
+            return Results.Json(new { success = false, message = "Dịch vụ đăng nhập chưa sẵn sàng." }, statusCode: StatusCodes.Status503ServiceUnavailable);
         });
 
         // 3. Current User Info
