@@ -252,14 +252,14 @@ public class OrderCommandIdempotencyTests : IDisposable
         var receipt = await conn.QuerySingleOrDefaultAsync<dynamic>(
             "SELECT * FROM command_receipts WHERE operation_id = @Op", new { Op = normOp });
         Assert.NotNull(receipt);
-        ((string)receipt.capability).Should().Be(Capabilities.OrdersSetDelivered);
+        ((string)receipt!.capability).Should().Be(Capabilities.OrdersSetDelivered);
         ((long)receipt.entity_id).Should().Be(orderId);
 
         // 2. Audit log row exists
         var audit = await conn.QuerySingleOrDefaultAsync<dynamic>(
             "SELECT * FROM audit_log WHERE operation_id = @Op", new { Op = normOp });
         Assert.NotNull(audit);
-        ((string)audit.action).Should().Be(Capabilities.OrdersSetDelivered);
+        ((string)audit!.action).Should().Be(Capabilities.OrdersSetDelivered);
         ((string)audit.outcome).Should().Be("Committed");
 
         // 3. Change journal row exists with operation_id tagged
@@ -267,7 +267,7 @@ public class OrderCommandIdempotencyTests : IDisposable
             "SELECT * FROM change_journal WHERE entity_id = @Id AND operation_id = @Op",
             new { Id = orderId, Op = normOp });
         Assert.NotNull(journal);
-        ((long)journal.revision).Should().Be(1);
+        ((long)journal!.revision).Should().Be(1);
         ((string)journal.field_group).Should().Be("delivered");
 
         // 4. Cloud operational outbox row exists with operation_id tagged
@@ -275,7 +275,7 @@ public class OrderCommandIdempotencyTests : IDisposable
             "SELECT * FROM cloud_operational_outbox WHERE entity_id = @Id AND operation_id = @Op",
             new { Id = orderId, Op = normOp });
         Assert.NotNull(outbox);
-        ((string)outbox.entity_type).Should().Be("order_delivered");
+        ((string)outbox!.entity_type).Should().Be("order_delivered");
 
         // 5. Business row updated
         var order = await conn.QuerySingleAsync<dynamic>(
@@ -321,7 +321,7 @@ public class OrderCommandIdempotencyTests : IDisposable
         var audit = await conn.QuerySingleOrDefaultAsync<dynamic>(
             "SELECT * FROM audit_log WHERE operation_id = @Op", new { Op = normOp });
         Assert.NotNull(audit);
-        ((string)audit.outcome).Should().Be("NoChange");
+        ((string)audit!.outcome).Should().Be("NoChange");
 
         // No outbox row
         var outboxCount = await conn.ExecuteScalarAsync<int>(

@@ -206,8 +206,8 @@ public class OrderCommandConcurrencyTests : IDisposable
 
         // Verify Note from A was NOT overwritten
         using var conn = _connectionFactory.CreateConnection();
-        string currentNote = await conn.ExecuteScalarAsync<string>(
-            "SELECT note FROM orders WHERE id = @Id", new { Id = orderId });
+        string currentNote = (await conn.ExecuteScalarAsync<string>(
+            "SELECT note FROM orders WHERE id = @Id", new { Id = orderId }))!;
         currentNote.Should().Be("Note from A");
     }
 
