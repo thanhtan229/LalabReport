@@ -1,11 +1,12 @@
 # Agent Progress — Lalab Auto Report
 
-Cập nhật: 25/10/2026. Bản ghi bàn giao ngắn; Git + test evidence là nguồn sự thật.
+Cập nhật: 27/10/2026. Bản ghi bàn giao ngắn; Git + test evidence là nguồn sự thật.
 
 ## Current milestone
 
-- **Gallery v2.1: đã commit** (code `9f3bfba`, docs `5960bfa`).
-- **LAN Phase 1 (server host, read-only LAN, inventory/renderer spike): FINAL PASS** tại `e229d5c`. Chưa push, chưa cài Windows Service, chưa deploy.
+- **Release v2.1.0 đã phát hành** (tag `2.1.0`, commit `79d903a`).
+- **LAN Phase 2: FINAL PASS** (chi tiết ở mục "Phase 2 final status" bên dưới). **Phase 3 đã hủy** (xem mục 27/10/2026 cuối file).
+- **Xác minh master 27/10/2026** (export `master` sang thư mục tạm, không đụng working tree): build Debug 0 lỗi, 29 cảnh báo; test 861 pass, 3 fail. Cả 3 fail là `LiveAutoUpdateAcceptanceTests` (test live GitHub kỳ vọng `v2.0` là bản mới nhất, trong khi latest hiện là `v2.1.0`). Chưa sửa; chờ quyết định.
 
 ## Completed work
 
