@@ -6,7 +6,9 @@ Cập nhật: 27/10/2026. Bản ghi bàn giao ngắn; Git + test evidence là ng
 
 - **Release v2.1.0 đã phát hành** (tag `2.1.0`, commit `79d903a`).
 - **LAN Phase 2: FINAL PASS** (chi tiết ở mục "Phase 2 final status" bên dưới). **Phase 3 đã hủy** (xem mục 27/10/2026 cuối file).
-- **Xác minh master 27/10/2026** (export `master` sang thư mục tạm, không đụng working tree): build Debug 0 lỗi, 29 cảnh báo; test 861 pass, 3 fail. Cả 3 fail là `LiveAutoUpdateAcceptanceTests` (test live GitHub kỳ vọng `v2.0` là bản mới nhất, trong khi latest hiện là `v2.1.0`). Chưa sửa; chờ quyết định.
+- **Xác minh master 27/10/2026** (export `master` sang thư mục tạm): build 0 lỗi; test 861 pass, 3 fail (`LiveAutoUpdateAcceptanceTests` kỳ vọng `v2.0` là latest).
+- **Nhánh `chore/remove-lan-server` (27/10/2026):** đã gỡ headless `LalabAutoReport.Server` và `LoadHarness` khỏi solution (PWA điện thoại qua app desktop, `LanWriteGate` và pipeline command vẫn giữ nguyên). Đã gỡ guard `server.lock` của `--toggle-printed`. Test live updater đổi sang kiểm tra theo logic và checksum `.sha256` đã publish, không còn hằng số `v2.0`. Thêm `SqliteCommandReceiptRetention` (mặc định 90 ngày, chạy khi khởi động, lỗi chỉ log cảnh báo). Kết quả: build 0 lỗi, 30 cảnh báo (phần lớn có sẵn trên master); test 800/800 pass. Chưa chạy smoke test runtime app desktop sau thay đổi.
+- Mất coverage có chủ đích: test `Inventory_SnapshotHashUnchangedAfterV25toV29` (hash bất biến khi migrate) gắn với công cụ inventory của server đã gỡ.
 
 ## Completed work
 

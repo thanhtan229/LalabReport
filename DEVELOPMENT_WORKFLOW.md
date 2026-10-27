@@ -912,6 +912,8 @@ Do not restart, rebuild, or package more of the project than necessary.
 
 ## 29. LAN Authoritative Server Workflow (Phase 2)
 
+> **Đã lỗi thời (27/10/2026):** `LalabAutoReport.Server` và `LoadHarness` đã gỡ khỏi solution; các lệnh `dotnet run --project src/LalabAutoReport.Server` bên dưới không còn hợp lệ. Giữ lại như lịch sử. Lệnh xác minh hiện hành: `dotnet build LalabAutoReport.slnx -c Debug` và `dotnet test LalabAutoReport.slnx -c Debug`.
+
 ### 29.1 Write Gate Mode (`--lan-writes`)
 `LalabAutoReport.Server.exe` controls LAN write availability via the `--lan-writes` command-line switch:
 - **`--lan-writes orders` (Default):** Kích hoạt các capability vận hành đơn hàng Phase 2: `orders.setDelivered`, `orders.setPrinted`, `orders.editNote`. Các thao tác tài chính, in ấn và bảo trì giữ trạng thái fail-closed trả về `503 WRITES_DISABLED_UNTIL_PHASE2`.

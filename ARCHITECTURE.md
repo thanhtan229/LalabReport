@@ -369,6 +369,8 @@ Nhằm hỗ trợ ứng dụng Mobile PWA quản lý trạng thái thanh toán, 
 
 ## 11. Kiến Trúc Máy Chủ LAN Có Thẩm Quyền & Đột Biến Đồng Thời Phase 2 (LAN Authoritative Server & Phase 2 Concurrency)
 
+> **Trạng thái 27/10/2026:** tiến trình headless `LalabAutoReport.Server` đã được gỡ khỏi master (Phase 3 đã hủy). Mục này là lịch sử thiết kế. Phần còn hiệu lực: PWA điện thoại do app desktop host (cổng 5050), `LanWriteGate`, và pipeline command/receipt/revision dùng chung cho các lệnh ghi qua PWA.
+
 > Tham chiếu chi tiết: [ADR 002 — Máy Chủ LAN Có Thẩm Quyền](docs/adr/ADR-002-lan-authoritative-server.md), [docs/PLAN_LAN_PHASE2.md](docs/PLAN_LAN_PHASE2.md), [docs/qa-evidence-phase2/B4_LOAD_REPORT.md](docs/qa-evidence-phase2/B4_LOAD_REPORT.md).
 
 Nhằm chuyển đổi mô hình từ ứng dụng Desktop đơn lẻ sang kiến trúc Client-Server nội bộ (LAN Authoritative Server) hỗ trợ đa thiết bị (Máy trạm Desktop, Web PWA di động) mà không vi phạm nguyên tắc bảo toàn tài chính và provenance, Phase 2 thiết lập nền tảng xác thực theo vai trò, quản lý phiên có trạng thái, cơ chế kiểm soát đồng thời lạc quan dựa trên revision, và pipeline xử lý lệnh bất biến (idempotent command pipeline).
