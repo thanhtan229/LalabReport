@@ -113,7 +113,7 @@ public class DatabaseUpgradeBackupRestoreFixtureTests : IDisposable
         // 4. PRAGMA integrity_check
         using (var conn = _connectionFactory.CreateConnection())
         {
-            string integrity = await conn.ExecuteScalarAsync<string>("PRAGMA integrity_check;");
+            string integrity = (await conn.ExecuteScalarAsync<string>("PRAGMA integrity_check;"))!;
             integrity.Should().Be("ok");
 
             // 5. PRAGMA foreign_key_check
@@ -185,7 +185,7 @@ public class DatabaseUpgradeBackupRestoreFixtureTests : IDisposable
         using (var restoredConn = _connectionFactory.CreateConnection())
         {
             // Integrity & FK check on restored DB
-            string restoredIntegrity = await restoredConn.ExecuteScalarAsync<string>("PRAGMA integrity_check;");
+            string restoredIntegrity = (await restoredConn.ExecuteScalarAsync<string>("PRAGMA integrity_check;"))!;
             restoredIntegrity.Should().Be("ok");
 
             var restoredFkViolations = (await restoredConn.QueryAsync("PRAGMA foreign_key_check;")).AsList();

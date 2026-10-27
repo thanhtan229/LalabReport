@@ -87,7 +87,7 @@ public class RevisionTriggerTests : IDisposable
         var journal = await conn.QuerySingleOrDefaultAsync<dynamic>(
             "SELECT * FROM change_journal WHERE entity_id = @Id AND field_group = 'delivered'", new { Id = orderId });
         Assert.NotNull(journal);
-        ((string)journal.entity_type).Should().Be("order");
+        ((string)journal!.entity_type).Should().Be("order");
         ((long)journal.revision).Should().Be(1);
         ((long)journal.database_generation).Should().Be(1);
     }
@@ -216,7 +216,7 @@ public class RevisionTriggerTests : IDisposable
         var journal = await conn.QuerySingleOrDefaultAsync<dynamic>(
             "SELECT * FROM change_journal WHERE entity_id = @Id AND field_group = 'printed'", new { Id = orderId });
         Assert.NotNull(journal);
-        ((long)journal.revision).Should().Be(1);
+        ((long)journal!.revision).Should().Be(1);
     }
 
     [Fact]
@@ -320,7 +320,7 @@ public class RevisionTriggerTests : IDisposable
             "SELECT * FROM change_journal WHERE entity_id = @Id AND entity_type = 'customer_bill' AND revision = 1",
             new { Id = billId });
         Assert.NotNull(reopenJournal);
-        ((string)reopenJournal.field_group).Should().Be("bill");
+        ((string)reopenJournal!.field_group).Should().Be("bill");
 
         // 3. Toggle payment (is_paid = true via SetPaymentStatusAsync)
         await billRepo.SetPaymentStatusAsync(billId, isPaid: true, paidAt: DateTimeOffset.UtcNow);
@@ -333,6 +333,6 @@ public class RevisionTriggerTests : IDisposable
             "SELECT * FROM change_journal WHERE entity_id = @Id AND entity_type = 'customer_bill' AND revision = 2",
             new { Id = billId });
         Assert.NotNull(paidJournal);
-        ((string)paidJournal.field_group).Should().Be("bill");
+        ((string)paidJournal!.field_group).Should().Be("bill");
     }
 }
