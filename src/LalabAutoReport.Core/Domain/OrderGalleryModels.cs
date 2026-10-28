@@ -24,8 +24,8 @@ public class OrderGalleryManifest
 public class OrderGalleryGroup
 {
     public long OrderItemId { get; set; }
-    public string SpecificationName { get; set; } = string.Empty;
-    public string FolderName { get; set; } = string.Empty;
+    public string? SpecificationName { get; set; } = string.Empty;
+    public string? FolderName { get; set; } = string.Empty;
     public string? SelectedPrintFolderRelativePath { get; set; }
     public bool IsFolderResolved { get; set; }
     public string? ResolutionMessage { get; set; }
@@ -43,7 +43,7 @@ public class OrderGalleryItem
     /// </summary>
     public string FileId { get; set; } = string.Empty;
     public long OrderItemId { get; set; }
-    public string SpecificationName { get; set; } = string.Empty;
+    public string? SpecificationName { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;
     public long FileSizeBytes { get; set; }
     public DateTimeOffset LastModifiedUtc { get; set; }
@@ -78,7 +78,7 @@ public class OrderGalleryItemDto
 {
     public string FileId { get; set; } = string.Empty;
     public long OrderItemId { get; set; }
-    public string SpecificationName { get; set; } = string.Empty;
+    public string? SpecificationName { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;
     public long FileSizeBytes { get; set; }
     public string Status { get; set; } = "Ready";
