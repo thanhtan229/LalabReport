@@ -757,7 +757,7 @@ public partial class OrderGalleryWindow : Window
 public class GalleryGroupViewItem : INotifyPropertyChanged
 {
     public long OrderItemId { get; set; }
-    public string SpecificationName { get; set; } = string.Empty;
+    public string? SpecificationName { get; set; } = string.Empty;
     public string FolderDisplayName { get; set; } = string.Empty;
     public string CountText { get; set; } = string.Empty;
     public bool HasWarning { get; set; }
