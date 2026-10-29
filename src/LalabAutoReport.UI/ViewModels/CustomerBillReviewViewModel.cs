@@ -1070,7 +1070,7 @@ public partial class CustomerBillReviewViewModel : ObservableObject
             : (Bill.CustomerNameSnapshot ?? "này");
 
         var confirm = ConfirmFunc(
-            $"Bạn có chắc chắn muốn mở khóa hóa đơn '{billName}' để chỉnh sửa không?\n\nHóa đơn đã khóa sẽ quay lại trạng thái Nháp (Draft).",
+            $"Bạn có chắc chắn muốn mở khóa hóa đơn '{billName}' để chỉnh sửa không?\n\nHóa đơn đã khóa sẽ quay lại trạng thái Nháp (Draft). Nếu hóa đơn đã thanh toán, trạng thái thanh toán sẽ bị hủy và cần ghi nhận lại sau khi khóa.",
             "Xác nhận mở khóa hóa đơn",
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);
@@ -1086,6 +1086,10 @@ public partial class CustomerBillReviewViewModel : ObservableObject
             Bill.LockedAt = null;
             Bill.ExportedAt = null;
             Bill.ExportFilePath = null;
+            Bill.IsPaid = false;
+            Bill.PaidAt = null;
+            IsPaid = false;
+            PaidAt = null;
             IsLocked = false;
             IsExportSuccess = false;
             ExportedFilePath = string.Empty;
