@@ -642,7 +642,7 @@ public partial class DashboardViewModel : ObservableObject
                     if (bill != null)
                     {
                         var answer = MessageBox.Show(
-                            $"Đơn hàng '{orderDisplay.FullOrderDisplayName}' đã có hóa đơn ({bill.BillNumber}), nhưng số lượng file trên đĩa đã thay đổi so với hóa đơn cũ.\n\nBạn có muốn cập nhật lại hóa đơn theo số lượng file mới không?",
+                            $"Đơn hàng '{orderDisplay.FullOrderDisplayName}' đã có hóa đơn ({bill.BillNumber}), nhưng số lượng file trên đĩa đã thay đổi so với hóa đơn cũ.\n\nNếu hóa đơn đã thanh toán, trạng thái thanh toán sẽ bị hủy và cần ghi nhận lại.\n\nBạn có muốn cập nhật lại hóa đơn theo số lượng file mới không?",
                             "Phát hiện file thay đổi",
                             MessageBoxButton.YesNo,
                             MessageBoxImage.Question
@@ -768,7 +768,7 @@ public partial class DashboardViewModel : ObservableObject
                 if (orderDisplay.FilesystemChangedAfterLock && (bill.Status == CustomerBillStatus.Locked || bill.Status == CustomerBillStatus.Exported))
                 {
                     var answer = MessageBox.Show(
-                        $"Hóa đơn ({bill.BillNumber}) của đơn hàng '{orderDisplay.FullOrderDisplayName}' đã được tính/xuất trước đó, nhưng số lượng file trên đĩa đã thay đổi so với hóa đơn cũ.\n\nBạn có muốn cập nhật lại hóa đơn theo số lượng file mới không?",
+                        $"Hóa đơn ({bill.BillNumber}) của đơn hàng '{orderDisplay.FullOrderDisplayName}' đã được tính/xuất trước đó, nhưng số lượng file trên đĩa đã thay đổi so với hóa đơn cũ.\n\nNếu hóa đơn đã thanh toán, trạng thái thanh toán sẽ bị hủy và cần ghi nhận lại.\n\nBạn có muốn cập nhật lại hóa đơn theo số lượng file mới không?",
                         "Phát hiện file thay đổi",
                         MessageBoxButton.YesNo,
                         MessageBoxImage.Question

@@ -359,6 +359,20 @@ public class SqliteCustomerBillRepository : ICustomerBillRepository
         {
             await SaveBillInternalAsync(connection, transaction, bill, allowReopen: true);
 
+            // Reopening makes the amounts editable, so the earlier payment no longer describes this bill.
+            // Clear it in the same transaction and queue the cloud update so both sides agree.
+            if (bill.IsPaid)
+            {
+                await connection.ExecuteAsync(@"
+                    UPDATE customer_bills
+                    SET is_paid = 0, paid_at = NULL, updated_at = @UpdatedAt
+                    WHERE id = @Id
+                ", new { Id = bill.Id, UpdatedAt = DateTimeOffset.UtcNow.ToString("o") }, transaction);
+                await SqliteCloudSyncStateRepository.EnqueueAsync(connection, transaction, "bill_payment", bill.Id, false);
+                bill.IsPaid = false;
+                bill.PaidAt = null;
+            }
+
             if (productJobIds.Count > 0)
             {
                 await connection.ExecuteAsync(@"
