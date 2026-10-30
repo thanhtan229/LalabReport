@@ -54,7 +54,10 @@ public class DatabaseMigrator : IDatabaseMigrator
             .Where(m => !appliedMigrations.Contains(m.Version) && m.Version <= targetVersion)
             .ToList();
 
-        if (pendingMigrations.Count > 0 && _backupService != null)
+        // An existing database needs a restore point before any schema change. If the backup fails,
+        // refuse the upgrade instead of migrating without a way back. A brand-new database has no data
+        // to protect, so it skips the backup.
+        if (pendingMigrations.Count > 0 && appliedMigrations.Count > 0 && _backupService != null)
         {
             try
             {
@@ -63,7 +66,9 @@ public class DatabaseMigrator : IDatabaseMigrator
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "Failed to create pre-migration backup; proceeding with caution");
+                _logger?.LogError(ex, "Pre-migration backup failed; {Count} migration(s) refused to protect existing data", pendingMigrations.Count);
+                throw new InvalidOperationException(
+                    "Không thể sao lưu cơ sở dữ liệu trước khi nâng cấp; nâng cấp đã bị hủy để bảo toàn dữ liệu.", ex);
             }
         }
 
