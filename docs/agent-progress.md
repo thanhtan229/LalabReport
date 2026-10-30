@@ -112,3 +112,16 @@ The following gaps were listed before B4 and are historical; B4 completion and t
 - **Tailscale 2 xưởng**: runbook docs/TAILSCALE_TWO_WORKSHOPS.md; máy A 	iniwin01 100.81.149.85 đã verify HTTP PWA qua Tailscale; PC B + điện thoại làm theo runbook.
 
 - **Release v2.1.0** (tag 2.1.0, commit 79d903a): GitHub Actions success; asset LalabAutoReport.exe 217,428,437 bytes, sha256 19a3ab2a...2cb57, kèm .sha256. Auto-update versioning đã sửa (AssemblyVersion 2.1.0.0); xem docs/RELEASE_NOTES_v2.1.0.md.
+
+---
+
+## Status checkpoint (2026-10-30)
+
+- **Release:** v2.1.3 is the latest published release. PC A runs the official executable (SHA-256 matches the published checksum).
+- **Master:** `52a7a8c`, synced with `origin/master`.
+- **Confirmed decision:** album included sheets default to **10** (Product Owner, 2026-10-30). Album billing by sheets is documented in `agents.md` rule 3.2.
+- **Merged since v2.1.2:** payment cancelled on reopen (F1); migration refused when pre-migration backup fails (F2); updater verifies published SHA-256 (F3); print-status marker failures are logged and the window-close handler no longer blocks the UI thread.
+- **Verified:** full suite 815/815 on a clean copy of master; PC A phone acceptance (login, order view, bill/label print) reported PASS on 2026-10-30.
+- **Not verified:** dashboard and thermal printing on the real workshop PC with the new build; PWA over Tailscale from an external network with real photos; restore from backup on a copy; closing the app while the phone is writing (accepted as skipped by the Product Owner).
+- **Out of scope for now:** workshop B onboarding; Phase 3 (desktop workstation client) cancelled.
+- **Next step:** Product Owner runs the acceptance checks above on PC A; any findings are recorded here before new code work.
