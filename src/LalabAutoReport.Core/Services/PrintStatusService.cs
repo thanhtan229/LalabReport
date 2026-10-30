@@ -63,7 +63,7 @@ public class PrintStatusService : IPrintStatusService
                         {
                             WriteMarkerFile(markerPath, record.MarkedAt, record.MarkedBy, record.Status, record.PrintedSubCount, record.TotalSubCount);
                         }
-                        catch { }
+                        catch (Exception markerEx) { _logger?.LogWarning(markerEx, "Print status marker maintenance failed; the database record remains authoritative."); }
                     }
                 }
                 return record.Status;
@@ -97,7 +97,7 @@ public class PrintStatusService : IPrintStatusService
                         if (doc.RootElement.TryGetProperty("totalCount", out var tcEl) && tcEl.TryGetInt32(out int tc))
                             tCount = tc;
                     }
-                    catch { }
+                    catch (Exception markerEx) { _logger?.LogWarning(markerEx, "Print status marker maintenance failed; the database record remains authoritative."); }
 
                     var recoveredRecord = new FolderPrintRecord
                     {
@@ -323,7 +323,7 @@ public class PrintStatusService : IPrintStatusService
             {
                 WriteMarkerFile(markerPath, dbRecord.MarkedAt, dbRecord.MarkedBy, dbRecord.Status, dbRecord.PrintedSubCount, dbRecord.TotalSubCount);
             }
-            catch { }
+            catch (Exception markerEx) { _logger?.LogWarning(markerEx, "Print status marker maintenance failed; the database record remains authoritative."); }
         }
         else if ((dbRecord == null || dbRecord.Status == PrintStatus.NotPrinted) && markerExists)
         {
@@ -359,7 +359,7 @@ public class PrintStatusService : IPrintStatusService
                 };
                 await _folderPrintRepository.SaveAsync(rec, cancellationToken);
             }
-            catch { }
+            catch (Exception markerEx) { _logger?.LogWarning(markerEx, "Print status marker maintenance failed; the database record remains authoritative."); }
         }
     }
 
@@ -409,7 +409,7 @@ public class PrintStatusService : IPrintStatusService
                     }
                 }
             }
-            catch { }
+            catch (Exception markerEx) { _logger?.LogWarning(markerEx, "Print status marker maintenance failed; the database record remains authoritative."); }
         }
 
         int totalCount = subfolderPaths.Count;
@@ -503,7 +503,7 @@ public class PrintStatusService : IPrintStatusService
                     File.SetAttributes(parentMarkerPath, FileAttributes.Normal);
                     File.Delete(parentMarkerPath);
                 }
-                catch { }
+                catch (Exception markerEx) { _logger?.LogWarning(markerEx, "Print status marker maintenance failed; the database record remains authoritative."); }
             }
             _visualMarkerService.RemoveVisualMarker(parentOrderPath);
 
@@ -579,7 +579,7 @@ public class PrintStatusService : IPrintStatusService
                     }
                 }
             }
-            catch { }
+            catch (Exception markerEx) { _logger?.LogWarning(markerEx, "Print status marker maintenance failed; the database record remains authoritative."); }
         }
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -614,7 +614,7 @@ public class PrintStatusService : IPrintStatusService
                         File.SetAttributes(subMarker, FileAttributes.Normal);
                         File.Delete(subMarker);
                     }
-                    catch { }
+                    catch (Exception markerEx) { _logger?.LogWarning(markerEx, "Print status marker maintenance failed; the database record remains authoritative."); }
                 }
                 _visualMarkerService.RemoveVisualMarker(sub);
             }
@@ -674,7 +674,7 @@ public class PrintStatusService : IPrintStatusService
                     File.SetAttributes(parentMarker, FileAttributes.Normal);
                     File.Delete(parentMarker);
                 }
-                catch { }
+                catch (Exception markerEx) { _logger?.LogWarning(markerEx, "Print status marker maintenance failed; the database record remains authoritative."); }
             }
             _visualMarkerService.RemoveVisualMarker(orderPath);
 
@@ -744,7 +744,7 @@ public class PrintStatusService : IPrintStatusService
                     return (folderPath, exactOrder, null, null, true);
                 }
             }
-            catch { }
+            catch (Exception markerEx) { _logger?.LogWarning(markerEx, "Print status marker maintenance failed; the database record remains authoritative."); }
         }
 
         // 2. Check if folderPath is inside an Order in DB
@@ -792,7 +792,7 @@ public class PrintStatusService : IPrintStatusService
                         return (checkPath, parentOrder, canonicalSubfolder, matchedItem, false);
                     }
                 }
-                catch { }
+                catch (Exception markerEx) { _logger?.LogWarning(markerEx, "Print status marker maintenance failed; the database record remains authoritative."); }
 
                 checkPath = Directory.GetParent(checkPath)?.FullName;
             }
@@ -819,7 +819,7 @@ public class PrintStatusService : IPrintStatusService
         }
     }
 
-    private static void WriteMarkerFile(
+    private void WriteMarkerFile(
         string markerPath,
         DateTimeOffset markedAt,
         string markedBy,
@@ -833,7 +833,7 @@ public class PrintStatusService : IPrintStatusService
             {
                 File.SetAttributes(markerPath, FileAttributes.Normal);
             }
-            catch { }
+            catch (Exception markerEx) { _logger?.LogWarning(markerEx, "Print status marker maintenance failed; the database record remains authoritative."); }
         }
 
         var markerData = new

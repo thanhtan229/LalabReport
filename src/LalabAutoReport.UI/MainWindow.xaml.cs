@@ -64,7 +64,9 @@ public partial class MainWindow : Window
         bool minimizeToTray = true;
         try
         {
-            var settings = _settingsRepository?.GetSettingsAsync().GetAwaiter().GetResult();
+            var settingsRepo = _settingsRepository;
+            // Run the read on the thread pool: blocking the UI thread on an awaited call can deadlock on close.
+            var settings = settingsRepo == null ? null : Task.Run(() => settingsRepo.GetSettingsAsync()).GetAwaiter().GetResult();
             if (settings != null)
             {
                 minimizeToTray = settings.MinimizeToTrayOnClose;
