@@ -73,12 +73,25 @@ If all three aliases resolve to one canonical customer, they still remain **thre
 
 Aggregation may occur in reports, but provenance must never be flattened away.
 
-### 3.2 One file = one printed copy
+### 3.2 One file = one printed copy (standard) or one album sheet
 
 No filename quantity multiplier exists in V1.
 
+Standard print specifications:
+
 ```text
-1 supported image file = quantity 1
+1 supported image file = quantity 1 printed copy
+```
+
+Album specifications (billing method `AlbumBasePlusExtra`):
+
+- Each supported image file in the final print folder is one album sheet.
+- The album is billed as one line. Its quantity stays 1; the sheet count is stored as `SheetCount`.
+- The base price covers the first `IncludedSheets` sheets (default 10 when not configured).
+- Each sheet beyond `IncludedSheets` is charged the extra-sheet price for the customer's price tier.
+
+```text
+album line total = base price + max(0, SheetCount - IncludedSheets) x extra-sheet price
 ```
 
 ### 3.3 Source count
