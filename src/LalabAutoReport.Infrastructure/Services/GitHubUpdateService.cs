@@ -1,8 +1,10 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -124,6 +126,8 @@ public class GitHubUpdateService : IUpdateService
                 }
             }
 
+            updateInfo.ChecksumUrl = FindChecksumUrl(root);
+
             // Parse version and compare
             var parsedLatest = ParseVersion(tagName);
             if (parsedLatest != null && parsedLatest > currentVersion)
@@ -189,6 +193,9 @@ public class GitHubUpdateService : IUpdateService
 
         _logger.LogInformation("Download completed. Creating updater script...");
 
+        // Never replace the running app with a file that does not match the checksum published with this release.
+        await VerifyDownloadedExecutableAsync(tempExePath, updateInfo.ChecksumUrl, cancellationToken).ConfigureAwait(false);
+
         var currentExePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
         if (string.IsNullOrEmpty(currentExePath) || !currentExePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
         {
@@ -208,6 +215,75 @@ public class GitHubUpdateService : IUpdateService
         using var updater = Process.Start(UpdateReplacement.CreateStartInfo(script))
             ?? throw new InvalidOperationException("Không thể khởi động updater; ứng dụng hiện tại được giữ nguyên.");
         Environment.Exit(0);
+    }
+
+    private static string FindChecksumUrl(JsonElement root)
+    {
+        if (!root.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
+        {
+            return string.Empty;
+        }
+
+        foreach (var asset in assets.EnumerateArray())
+        {
+            if (asset.TryGetProperty("name", out var nameElem) &&
+                (nameElem.GetString() ?? string.Empty).EndsWith(".exe.sha256", StringComparison.OrdinalIgnoreCase) &&
+                asset.TryGetProperty("browser_download_url", out var urlElem))
+            {
+                return urlElem.GetString() ?? string.Empty;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    // The published file has the form "<sha256>  <file name>". Only the hash token is compared.
+    public static bool ChecksumMatches(string actualSha256Hex, string checksumFileContent)
+    {
+        var parts = (checksumFileContent ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+        {
+            return false;
+        }
+
+        string expected = parts[0];
+        return expected.Length == 64
+            && expected.All(Uri.IsHexDigit)
+            && string.Equals(expected, actualSha256Hex, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task VerifyDownloadedExecutableAsync(string filePath, string checksumUrl, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(checksumUrl))
+        {
+            DiscardStagedFile(filePath);
+            throw new InvalidDataException("Bản phát hành không có file checksum; cập nhật đã bị hủy.");
+        }
+
+        string checksumContent = await _httpClient.GetStringAsync(checksumUrl, cancellationToken).ConfigureAwait(false);
+        string actualHash;
+        await using (var stream = File.OpenRead(filePath))
+        {
+            actualHash = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false));
+        }
+
+        if (!ChecksumMatches(actualHash, checksumContent))
+        {
+            DiscardStagedFile(filePath);
+            throw new InvalidDataException("Checksum của bản cập nhật không khớp với bản phát hành; cập nhật đã bị hủy.");
+        }
+    }
+
+    private void DiscardStagedFile(string filePath)
+    {
+        try
+        {
+            File.Delete(filePath);
+        }
+        catch (IOException ex)
+        {
+            _logger.LogWarning(ex, "Could not remove rejected update file {Path}", filePath);
+        }
     }
 
     private static InvalidOperationException excitingInvalidOperationException(string msg) => new(msg);
