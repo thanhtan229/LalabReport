@@ -2,15 +2,19 @@
 
 Mục tiêu: một điện thoại xem và in được **cả xưởng A và xưởng B**, mỗi xưởng chạy app riêng trên PC riêng, không cần mở port ra Internet, không cần cài app desktop trên điện thoại.
 
-## 0. Trạng thái hiện tại (máy A)
+## 0. Current status on PC A (checked 2026-10-30)
 
-- Tailscale đã cài, service `Tailscale` = Running/Automatic.
-- Node A: `tiniwin01`, IP Tailscale `100.81.149.85`.
-- App Lalab Auto Report 2.0.0 đang chạy, PWA LAN tại `http://100.81.149.85:5050`.
-- Firewall đã có rule cho Mobile Web Server, port TCP 5050.
-- Đã verify: `http://100.81.149.85:5050/api/status` → 200.
+- Tailscale service is running; node A is `tiniwin01`, IP `100.81.149.85`.
+- Update 2026-10-30 (later, supersedes the bullets below): PC A runs the official release **v2.1.3** (ProductVersion `2.1.3+cdbac5c`), updated through the in-app updater; the executable SHA-256 matches the published checksum. `/api/status` returns HTTP 200 on the tailnet IP.
+- Earlier entry: restarted from HEAD `1d52aea` using `DEV_START.bat`: Debug build succeeded with 0 warnings/errors; new app PID is 6024 (replaced old PID 33200). ProductVersion is `2.1.0+1d52aea`.
+- `/api/status` returns HTTP 200 via both `127.0.0.1:5050` and `100.81.149.85:5050` on PC A.
+- The Product Owner reported PASS on 2026-10-30 for phone access to PC A, login, order viewing, and printing a bill/label. `tailscale ping` from PC A to the phone still times out, but the phone acceptance path succeeded.
+- No PC B node appeared in the observed tailnet inventory; workshop B is not part of the current verified pilot.
+- The firewall has a Mobile Web Server rule for TCP port 5050.
 
 ## 1. Mô hình
+
+Product Owner decision (2026-10-30): continue independent desktop/PWA/cloud installations per workshop, with a separate DB, PIN, and printer at each site. Shared LAN server/workstation access is out of scope.
 
 ```text
 Điện thoại (Tailscale)
@@ -63,7 +67,7 @@ Mục tiêu: một điện thoại xem và in được **cả xưởng A và xư
 Trên điện thoại (Tailscale bật):
 - [ ] `http://100.81.149.85:5050/api/status` trả JSON, đúng tên xưởng A.
 - [ ] `http://100.<IP-B>:5050/api/status` trả JSON, đúng tên xưởng B.
-- [ ] Đăng nhập PIN A, xem đơn A, in thử A.
+- [x] PC A phone login, order view, and bill/label print accepted by the Product Owner on 2026-10-30.
 - [ ] Đăng nhập PIN B, xem đơn B, in thử B.
 - [ ] Tắt Wi-Fi, dùng 4G nhưng vẫn bật Tailscale → cả 2 URL vẫn mở được.
 - [ ] PC A/B không sleep; app đang chạy; Tailscale service đang chạy.

@@ -1,15 +1,24 @@
 # Agent Progress — Lalab Auto Report
 
-Cập nhật: 27/10/2026. Bản ghi bàn giao ngắn; Git + test evidence là nguồn sự thật.
+Updated: 2026-10-30. Git history and current inspection are authoritative.
 
 ## Current milestone
 
-- **Release v2.1.0 đã phát hành** (tag `2.1.0`, commit `79d903a`).
-- **LAN Phase 2: FINAL PASS** (chi tiết ở mục "Phase 2 final status" bên dưới). **Phase 3 đã hủy** (xem mục 27/10/2026 cuối file).
-- **Xác minh master 27/10/2026** (export `master` sang thư mục tạm): build 0 lỗi; test 861 pass, 3 fail (`LiveAutoUpdateAcceptanceTests` kỳ vọng `v2.0` là latest).
-- **Nhánh `chore/remove-lan-server` (27/10/2026):** đã gỡ headless `LalabAutoReport.Server` và `LoadHarness` khỏi solution (PWA điện thoại qua app desktop, `LanWriteGate` và pipeline command vẫn giữ nguyên). Đã gỡ guard `server.lock` của `--toggle-printed`. Test live updater đổi sang kiểm tra theo logic và checksum `.sha256` đã publish, không còn hằng số `v2.0`. Thêm `SqliteCommandReceiptRetention` (mặc định 90 ngày, chạy khi khởi động, lỗi chỉ log cảnh báo). Kết quả: build sạch (0 lỗi, 25 cảnh báo, phần lớn nullable có sẵn trên master); test 800/800 pass. Smoke test app desktop (data dir cô lập, 27/10/2026): khởi động và migrate OK; PWA `http://127.0.0.1:5050/` trả 200; lần khởi động thứ hai log `Pruned 1 command receipts` và receipt quá hạn bị xóa. Cảnh báo có sẵn: `Failed to copy backup to secondary location: no such table: app_settings` khi backup trước migrate trên DB mới (không thuộc phạm vi thay đổi này).
-- Nhánh `chore/remove-lan-server` đã fast-forward vào `master` (chưa push).
-- Mất coverage có chủ đích: test `Inventory_SnapshotHashUnchangedAfterV25toV29` (hash bất biến khi migrate) gắn với công cụ inventory của server đã gỡ.
+- Current source of truth: branch `master`, HEAD `cdbac5c` (v2.1.3 released 2026-10-30), synced with `origin/master`.
+- LAN Phase 2 remains recorded as FINAL PASS. LAN Phase 3 (desktop workstation client) was explicitly cancelled on 2026-10-27. On 2026-10-30, the Product Owner confirmed the direction: continue independent desktop/PWA/cloud installations per workshop, each with its own DB, credentials, and printer. Shared LAN server/workstation phases are out of scope; do not resume Phase 3/4.
+- The latest tag is `v2.1.2` at `f692e37`; HEAD contains later untagged fixes, including `43389f1` for clearing payment state when reopening a paid bill.
+- Changes after the 2026-10-27 handoff include removing the headless Server/LoadHarness projects, command-receipt retention, CI workflow updates, removal of legacy PIN login paths, gallery nullable annotations, and the paid-bill reopen fix. See `git log` for exact commits.
+- Validation evidence in this file is older than HEAD. The 2026-10-27 master check recorded 861 passed and 3 failures in `LiveAutoUpdateAcceptanceTests` because those tests expected `v2.0`; it is not evidence for HEAD `1d52aea`.
+- Validation on 2026-10-29: `dotnet test LalabAutoReport.slnx --nologo -p:UseAppHost=false` passed 805/805 tests in 3m35s. Build emitted MSB3061 because the running app PID 33200 holds the existing UI apphost EXE; the solution projects and test assembly built, and tests completed successfully. Plain `dotnet test LalabAutoReport.slnx --nologo` could not build while that EXE was locked. The running app remains the prior 2.1.2 process, so this test result does not mean the live app loaded HEAD.
+- Runtime updated on 2026-10-30 via `DEV_START.bat`: build succeeded with 0 warnings/errors; old PID 33200 was replaced by PID 6024. The new process reports ProductVersion `2.1.0+1d52aea` and owns TCP 5050. `/api/status` returns HTTP 200 on loopback and `100.81.149.85`. Tailscale lists `iphone-13-pro-max`; `tailscale ping` from PC A timed out, but the Product Owner reported phone access/login/order view/bill-label print PASS on PC A on 2026-10-30. No PC-B node appeared in the observed tailnet inventory.
+
+## Active tasks
+
+- No coding task is currently in progress.
+- PC A phone acceptance is reported PASS by the Product Owner on 2026-10-30. Next operational check: onboard and validate PC B only when that independent workshop is available/in scope.
+- Product direction is resolved: keep each workshop independent. No shared LAN database/client milestone is active.
+- Runtime update is complete for PC A. The app is running from HEAD `1d52aea`; restart is not needed unless another source change is made.
+- Update 2026-10-30 (later, supersedes the two lines above): PC A runs the official release **v2.1.3** (ProductVersion `2.1.3+cdbac5c`), updated through the in-app updater. The executable SHA-256 matches the published `LalabAutoReport.exe.sha256`. PWA returns HTTP 200 on `127.0.0.1:5050` and on `100.81.149.85:5050`.
 
 ## Completed work
 
@@ -22,16 +31,15 @@ Cập nhật: 27/10/2026. Bản ghi bàn giao ngắn; Git + test evidence là ng
   - `render-spike`: render bill JPEG + tem trong tiến trình server, hash pixel khớp desktop.
   - Headless `--toggle-printed` từ chối (exit 5) khi `server.lock` đang bị giữ.
 
-## Active tasks
+## Phase 1 handoff context (historical)
 
-- Không có code đang dở. Working tree sẽ sạch sau commit docs/evidence.
+The following Phase 1 notes describe the design and review state at that milestone. The current milestone and active tasks at the top of this file supersede them.
 
-## Important technical decisions
+## Important technical decisions (Phase 1; historical)
 
-- Một writer host: server sở hữu DB/scan/cloud; client chỉ qua API (Phase 3).
-- Phase 1 chưa mở ghi nghiệp vụ: mọi write trả 503 cho tới khi có revision/idempotency ở Phase 2.
-- Inventory là công cụ cutover: đọc snapshot, không migrate, không ghi nguồn; kiểm tra hash + exit code.
-- Health không lộ đường dẫn/secret; readiness phản ánh DB probe + mobile API.
+- The then-proposed model used one writer host for server-owned DB/scan/cloud and API-only clients. The server/workstation implementation was later cancelled and removed from `master`.
+- Phase 1 kept business writes disabled until Phase 2 added revisions and idempotency.
+- Inventory was designed as a read-only cutover tool; the headless server and inventory tooling were later removed from the current solution.
 
 ## Gate / review status
 
@@ -39,14 +47,9 @@ Cập nhật: 27/10/2026. Bản ghi bàn giao ngắn; Git + test evidence là ng
 - Code Reviewer: LGTM cho range chính; fixes được re-review.
 - Final Reviewer: **FINAL PASS** tại `e229d5c`; 2 non-blocking deviations ghi ở `docs/phase1-inventory-contract.md` §8.
 
-## Known limitations / follow-up
+## Phase 1 follow-up items (historical)
 
-- **Session 0 Windows Service** chưa cài/kiểm chứng (Phase 5/6); renderer mới chứng minh trên console host.
-- Cloud/AutoScan tắt trong server profile Phase 1 (Q-B4/Q-B7).
-- Business writes vẫn 503 tới Phase 2.
-- Desktop standalone vẫn dùng DB LocalAppData riêng cho tới Phase 3 client (không đồng bộ với server DB).
-- Exit code 1 của inventory có thể đã in JSON trước khi phát hiện sai lệch hash → automation phải kiểm exit code; dự kiến sửa ordering ở Phase 2.
-- `bill_lines` chỉ optional khi không có locked legacy bills (nếu có → exit 8).
+These items were recorded before LAN Phase 2. Do not treat them as current tasks; consult the current milestone above and the Phase 2 final status below. Windows Service Session 0 was not verified, and the server profile had Cloud/AutoScan disabled. The server inventory-specific caveats no longer apply after removal of that host.
 
 ## Commits
 
@@ -57,16 +60,8 @@ Cập nhật: 27/10/2026. Bản ghi bàn giao ngắn; Git + test evidence là ng
 - `425bf86` renderer spike + headless guard.
 - `fdb4d7f`, `6513edf`, `e229d5c` final-review fixes.
 
-## Recommended next step (Phase 2)
+## Phase 2 progress (historical detail; final status below is authoritative)
 
-1. Auth: PIN hashed, session/device lifecycle, capability matrix (Admin/Staff; no cashier role yet), revoke/rate-limit.
-2. Commands: desired-state set commands, revision checks, idempotency keys/receipts, operation lookup.
-3. Mutation handlers: atomic bill-job claim, audit/outbox, conflict UX; enable writes only after concurrency/crash tests pass.
-
-
----
-
-## Phase 2 progress
 
 - **B1 — Auth foundation: DONE** (commit `0f2a7b9`, review LGTM).
   - V25 `auth_credentials` (PBKDF2-SHA256 600k, per-role epoch), V26 `auth_sessions`; `LatestVersion=26`.
@@ -84,11 +79,11 @@ Cập nhật: 27/10/2026. Bản ghi bàn giao ngắn; Git + test evidence là ng
   - LanWriteGate exact allowlist; default `--lan-writes orders` (payment/print/maintenance still 503; rollback `--lan-writes none`).
   - PWA set-state + revisions/operationId/409 draft preservation/lookup retry; UUID via `crypto.getRandomValues` (LAN-safe).
   - Validation: 810 tests; runtime default note 200, payment 503, revoke-all 200; QA PASS; re-review LGTM.
-- **B4 (hardening/load/docs/final review): NOT STARTED.**
+- **B4 (hardening/load/docs/final review): COMPLETE**; see Phase 2 final status below.
 
 Phase 2 release-note behavior changes (acknowledged): PIN no longer viewable (empty = unchanged, explicit clear); PWA re-login once after upgrade; lock rejected if an included order is already in another locked/exported bill (double-bill fix); scan no longer resurrects an old printed marker after explicit un-print; notes limited to 4000 characters.
 
-Remaining known gaps: Session 0 Windows Service install/rendering NOT VERIFIED; desktop standalone still writes its own LocalAppData DB (Phase 3 client); desktop startup credential scrubber (B1-NB3) optional; legacy toggle adapters are intentionally not retry-safe; B4 load/10-client testing pending.
+The following gaps were listed before B4 and are historical; B4 completion and the current milestone above supersede this snapshot.
 
 
 ---
@@ -107,7 +102,7 @@ Remaining known gaps: Session 0 Windows Service install/rendering NOT VERIFIED; 
 
 ---
 
-## Runtime & Cloud deployment (27/10/2026)
+## Runtime & Cloud deployment snapshot (27/10/2026; historical)
 
 - **.NET 10 LTS**: toàn bộ solution retarget `net10.0`/`net10.0-windows`; WindowsServices 10.0.12; workflow/scripts/docs cập nhật; commit `c274598`. Build Debug/Release 0 errors, full suite 858 passed trên net10; app net10 chạy LAN (PID 107796) với PWA/Tailwind local.
 - **Cloud production**: worker `9226ad9a-9ef0-408e-aa4a-7c4c23ae6917` deployed; D1 migration `0008_bill_label_snapshots.sql` applied (3 cột bill snapshot còn thiếu do 0007 đã được apply bản cũ). Xem `docs/CLOUD_DEPLOY_20261027.md`; backup D1 `artifacts/cloud-d1-backup-20261027.sql` (local).
