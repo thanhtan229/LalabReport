@@ -8,8 +8,8 @@
 - Build/deployment: follow repository workflow. No push, merge, cleanup or deletion performed.
 ## Git worktree inventory (captured 2026-11-06)
 
-``text
+```text
 worktree D:/___TOOLS/__TINIX/LalabReport
 HEAD 2e9873f5e53947329a5c709bc237e80585691dc1
 branch refs/heads/master
-``
+```
