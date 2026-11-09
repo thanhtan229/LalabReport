@@ -234,7 +234,7 @@ public class KestrelMobileWebServer : IMobileWebServer, IDisposable
             return Results.Ok(new
             {
                 appName = "Lalab Auto Report",
-                version = typeof(KestrelMobileWebServer).Assembly.GetName().Version?.ToString(3) ?? "2.0.0",
+                version = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "2.0.0",
                 workshopName = settings.WorkshopName,
                 serverTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
                 cloudSyncEnabled = settings.EnableCloudSync,
